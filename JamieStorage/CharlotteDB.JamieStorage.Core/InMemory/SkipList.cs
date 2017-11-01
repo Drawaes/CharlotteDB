@@ -10,6 +10,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
     public class SkipList<TCompare, TAllocator> where TCompare : IKeyComparer where TAllocator : IAllocator
     {
         private List<Memory<byte>> _buffers = new List<Memory<byte>>();
+        private List<Memory<byte>> _dataBuffers = new List<Memory<byte>>();
         private int _bufferSize;
         private long _currentAllocatedPoint;
         private TCompare _comparer;
@@ -21,7 +22,6 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         private int _maxHeight;
         private int _bufferShift;
         private int _bufferMask;
-        private static readonly int s_sizeOfMemory = Unsafe.SizeOf<Memory<byte>>();
 
         public SkipList(int seed, TCompare comparer, TAllocator allocator)
         {
@@ -53,10 +53,10 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 
         public int Count => _count;
 
-        private Span<long> AllocateNode(byte height, Span<byte> key, Memory<byte> data, out long pointerStart)
+        private Span<long> AllocateNode(byte height, Span<byte> key, long data, out long pointerStart)
         {
             var sizeNeeded = key.Length + sizeof(int);
-            sizeNeeded += height * sizeof(long) + sizeof(byte) + s_sizeOfMemory;
+            sizeNeeded += (height + 1) * sizeof(long) + sizeof(byte);
             var pointerEnd = Interlocked.Add(ref _currentAllocatedPoint, sizeNeeded);
             pointerStart = pointerEnd - sizeNeeded;
             var bufferStart = pointerStart >> _bufferShift;
@@ -82,11 +82,18 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             return pointerSpan;
         }
 
+        private long StoreData(Memory<byte> data)
+        {
+            return 0;
+        }
+
         public void Insert(Span<byte> key, Memory<byte> data)
         {
             var height = GetHeight();
 
-            var pointerSpan = AllocateNode((byte)height, key, data, out var pointerStart);
+            var dataPointer = StoreData(data);
+
+            var pointerSpan = AllocateNode((byte)height, key, dataPointer, out var pointerStart);
             var currentPointerList = HeadNode;
             for (var level = _height; level >= 0;)
             {
@@ -156,7 +163,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                 }
                 else if (compareResult == 0)
                 {
-                    data = nodeAtPointer.Data.Span;
+                    data = default;// nodeAtPointer.Data.Span;
                     return true;
                 }
                 else if (compareResult < 0)
@@ -168,7 +175,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 
             return false;
         }
-        
+
         public void Remove(Span<byte> key)
         {
             var currentPointerTable = HeadNode;

@@ -37,6 +37,16 @@ namespace SampleSkipLists
                 skipList.Insert(span, bytes);
                 //sortedDict.Add(l, l);
             }
+            //for(var i = 0; i< list.Length;i++)
+            //{
+            //    var l = list[i];
+            //    var bytes = Encoding.UTF8.GetBytes(l);
+            //    var span = new Span<byte>(bytes);
+            //    if(!skipList.TryFind(span, out var data))
+            //    {
+            //        throw new NotImplementedException();
+            //    }
+            //}
 
             var totalCount = skipList.Count;
             Console.Write($"time = {sw.ElapsedMilliseconds}");
