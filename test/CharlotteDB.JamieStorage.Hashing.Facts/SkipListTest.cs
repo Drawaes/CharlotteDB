@@ -14,8 +14,8 @@ namespace CharlotteDB.JamieStorage.Hashing
         public void Update()
         {
             var comparer = new ByteByByteComparer();
-            var allocator = new Allocator(2048);
-            var skipList = new SkipList<ByteByByteComparer, Allocator>(2048, comparer, allocator);
+            var allocator = new DummyAllocator(2048);
+            var skipList = new SkipList<ByteByByteComparer, DummyAllocator>(2048, comparer, allocator);
 
             var data = new byte[500];
             var mem = new Memory<byte>(data);

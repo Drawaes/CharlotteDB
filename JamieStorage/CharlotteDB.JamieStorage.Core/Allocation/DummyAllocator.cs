@@ -4,11 +4,11 @@ using System.Text;
 
 namespace CharlotteDB.JamieStorage.Core.Allocation
 {
-    public class Allocator : IAllocator
+    public class DummyAllocator : IAllocator
     {
         private int _normalBufferSize;
 
-        public Allocator(int normalBufferSize) => _normalBufferSize = normalBufferSize;
+        public DummyAllocator(int normalBufferSize) => _normalBufferSize = normalBufferSize;
 
         public int NormalBufferSize => _normalBufferSize;
 
