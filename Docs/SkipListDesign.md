@@ -5,7 +5,9 @@ The structure of a node looks like
 
 # Node
 ------
-int32 - Key length
+int32 - Node Length
+------
+byte - Key length
 ------
 Key data
 ------

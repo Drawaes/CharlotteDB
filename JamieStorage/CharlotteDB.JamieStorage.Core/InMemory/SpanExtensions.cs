@@ -21,7 +21,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             return inputSpan.Slice(size);
         }
 
-        public static unsafe Span<byte> Read<T>(this Span<byte> inputSpan, out T value) where T : struct
+        public static unsafe Span<byte> ReadAndAdvance<T>(this Span<byte> inputSpan, out T value) where T : struct
         {
             var size = Unsafe.SizeOf<T>();
 
@@ -30,6 +30,16 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                 value = Unsafe.Read<T>(ptr);
             }
             return inputSpan.Slice(size);
+        }
+
+        public static unsafe T Read<T>(this Span<byte> inputSpan) where T :struct
+        {
+            var size = Unsafe.SizeOf<T>();
+            if (inputSpan.Length < size) throw new ArgumentOutOfRangeException(nameof(inputSpan));
+            fixed (void * ptr = &inputSpan.DangerousGetPinnableReference())
+            {
+                return Unsafe.Read<T>(ptr);
+            }
         }
     }
 }
