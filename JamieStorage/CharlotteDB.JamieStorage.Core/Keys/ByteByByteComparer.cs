@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace CharlotteDB.JamieStorage.Core.InMemory
+namespace CharlotteDB.JamieStorage.Core.Keys
 {
     public class ByteByByteComparer : IKeyComparer
     {

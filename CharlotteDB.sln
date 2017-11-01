@@ -13,7 +13,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CharlotteDB.JamieStorage.Co
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{F1BC17F8-44EF-49E0-A93A-D15F8A93BF9F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleSkipLists", "Samples\SampleSkipLists\SampleSkipLists.csproj", "{36214DCE-47CB-4FCF-94BD-D9E10D03473B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SampleSkipLists", "Samples\SampleSkipLists\SampleSkipLists.csproj", "{36214DCE-47CB-4FCF-94BD-D9E10D03473B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docs", "Docs", "{6F642AFD-F6B8-4F62-8A17-A87E19361BC6}"
+	ProjectSection(SolutionItems) = preProject
+		DatabaseMetaFile.md = DatabaseMetaFile.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

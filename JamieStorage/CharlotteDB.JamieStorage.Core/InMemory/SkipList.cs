@@ -1,19 +1,19 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
+using CharlotteDB.JamieStorage.Core.Allocation;
+using CharlotteDB.JamieStorage.Core.Keys;
 
 namespace CharlotteDB.JamieStorage.Core.InMemory
 {
-    public class SkipList<Compare> where Compare : IKeyComparer
+    public class SkipList<TCompare, TAllocator> where TCompare : IKeyComparer where TAllocator : IAllocator
     {
         private List<Memory<byte>> _buffers = new List<Memory<byte>>();
         private int _bufferSize;
         private long _currentAllocatedPoint;
-        private Compare _comparer;
+        private TCompare _comparer;
+        private TAllocator _allocator;
         private int _count;
         private int _height;
         private const double _heightProbability = 0.5;
@@ -22,13 +22,14 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         private int _bufferShift;
         private int _bufferMask;
 
-        public SkipList(int seed, int bufferSize, Compare comparer)
+        public SkipList(int seed, TCompare comparer, TAllocator allocator)
         {
             _comparer = comparer;
-            _bufferShift = (int)Math.Ceiling(Math.Log(bufferSize, 2));
+            _allocator = allocator;
+            _bufferShift = (int)Math.Ceiling(Math.Log(allocator.NormalBufferSize, 2));
             _bufferSize = 1 << _bufferShift;
             _bufferMask = (1 << _bufferShift) - 1;
-            _buffers.Add(new Memory<byte>(new byte[_bufferSize]));
+            _buffers.Add(_allocator.AllocateNormalBuffer());
             _random = new Random(seed);
             _maxHeight = 50;
             //Create head node, which is just a list of pointers going 0 -> _maxHeight - 1;
@@ -52,7 +53,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             return span;
         }
 
-        public SkipList(int bufferSize, Compare comparer) : this(Environment.TickCount, bufferSize, comparer)
+        public SkipList(TCompare comparer, TAllocator allocator) : this(Environment.TickCount, comparer, allocator)
         {
         }
 
@@ -68,7 +69,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             var bufferEnd = pointerEnd >> _bufferShift;
             if (bufferStart != bufferEnd)
             {
-                _buffers.Add(new Memory<byte>(new byte[_bufferSize]));
+                _buffers.Add(_allocator.AllocateNormalBuffer());
                 _currentAllocatedPoint = (_buffers.Count - 1) * _bufferSize;
                 return AllocateNode(height, key, data, out pointerStart);
             }
