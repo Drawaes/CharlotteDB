@@ -21,6 +21,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         private int _maxHeight;
         private int _bufferShift;
         private int _bufferMask;
+        private static readonly int s_sizeOfMemory = Unsafe.SizeOf<Memory<byte>>();
 
         public SkipList(int seed, TCompare comparer, TAllocator allocator)
         {
@@ -31,7 +32,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             _bufferMask = (1 << _bufferShift) - 1;
             _buffers.Add(_allocator.AllocateNormalBuffer());
             _random = new Random(seed);
-            _maxHeight = 50;
+            _maxHeight = byte.MaxValue;
             //Create head node, which is just a list of pointers going 0 -> _maxHeight - 1;
             _currentAllocatedPoint = sizeof(ulong) * _maxHeight;
         }
@@ -62,7 +63,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         private Span<long> AllocateNode(byte height, Span<byte> key, Memory<byte> data, out long pointerStart)
         {
             var sizeNeeded = key.Length + sizeof(int);
-            sizeNeeded += height * sizeof(ulong) + sizeof(byte) + Unsafe.SizeOf<Memory<byte>>();
+            sizeNeeded += height * sizeof(ulong) + sizeof(byte) + s_sizeOfMemory;
             var pointerEnd = Interlocked.Add(ref _currentAllocatedPoint, sizeNeeded);
             pointerStart = pointerEnd - sizeNeeded;
             var bufferStart = pointerStart >> _bufferShift;
@@ -141,7 +142,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         {
             var span = GetBufferForPointer(pointerToItem);
             span = span.Read(out int size);
-            span = span.Slice(size + Unsafe.SizeOf<Memory<byte>>());
+            span = span.Slice(size + s_sizeOfMemory);
             span = span.Read(out byte height);
             var heightSize = height * sizeof(long);
             return span.Slice(0, heightSize).NonPortableCast<byte, long>();
