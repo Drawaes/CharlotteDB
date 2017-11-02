@@ -18,11 +18,10 @@ namespace CharlotteDB.JamieStorage.Hashing
             var skipList = new SkipList<ByteByByteComparer, DummyAllocator>(2048, comparer, allocator);
 
             var data = new byte[500];
-            var mem = new Memory<byte>(data);
-
-            skipList.Insert(GetSpanFromString("Tim"), mem);
-            skipList.Insert(GetSpanFromString("Katie"), mem);
-            skipList.Insert(GetSpanFromString("Blah"), mem);
+            
+            skipList.Insert(GetSpanFromString("Tim"), data);
+            skipList.Insert(GetSpanFromString("Katie"), data);
+            skipList.Insert(GetSpanFromString("Blah"), data);
         }
 
         private static Span<byte> GetSpanFromString(string input)

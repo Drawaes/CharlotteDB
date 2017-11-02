@@ -9,19 +9,21 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 {
     public class SkipList<TCompare, TAllocator> where TCompare : IKeyComparer where TAllocator : IAllocator
     {
-        private List<Memory<byte>> _buffers = new List<Memory<byte>>();
+        private List<Memory<byte>> _keyBuffers = new List<Memory<byte>>();
+        private List<Memory<byte>> _dataBuffers = new List<Memory<byte>>();
         private int _bufferSize;
-        private long _currentAllocatedPoint;
+        private uint _currentKeyPointer;
+        private uint _currentDataPointer;
         private TCompare _comparer;
         private TAllocator _allocator;
         private int _count;
         private int _height;
         private const double _heightProbability = 0.5;
         private Random _random;
-        private int _maxHeight;
+        private uint _maxHeight;
         private int _bufferShift;
-        private int _bufferMask;
-        private static readonly int s_sizeOfMemory = Unsafe.SizeOf<Memory<byte>>();
+        private uint _bufferMask;
+        private uint[] _headNode;
 
         public SkipList(int seed, TCompare comparer, TAllocator allocator)
         {
@@ -29,29 +31,23 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             _allocator = allocator;
             _bufferShift = (int)Math.Ceiling(Math.Log(allocator.NormalBufferSize, 2));
             _bufferSize = 1 << _bufferShift;
-            _bufferMask = (1 << _bufferShift) - 1;
-            _buffers.Add(_allocator.AllocateNormalBuffer());
+            _bufferMask = (uint)(1 << _bufferShift) - 1;
+            _keyBuffers.Add(_allocator.AllocateNormalBuffer());
+            _dataBuffers.Add(_allocator.AllocateNormalBuffer());
+
             _random = new Random(seed);
             _maxHeight = byte.MaxValue;
-            //Create head node, which is just a list of pointers going 0 -> _maxHeight - 1;
-            _currentAllocatedPoint = sizeof(ulong) * _maxHeight;
+            _headNode = new uint[_maxHeight];
         }
 
-        private Span<long> HeadNode => _buffers[0].Span.Slice(0, (sizeof(long) * _maxHeight)).NonPortableCast<byte, long>();
+        public long SpaceUsed => _currentDataPointer + _currentKeyPointer;
 
-        private Span<byte> GetKey(long pointerToItem)
-        {
-            var span = GetBufferForPointer(pointerToItem);
-            span = span.Read(out int size);
-            return span.Slice(0, size);
-        }
-
-        private Span<byte> GetBufferForPointer(long pointerToItem)
+        private SkipListNode GetNodeForPointer(uint pointerToItem)
         {
             var bufferId = pointerToItem >> _bufferShift;
             var bufferIndex = pointerToItem & _bufferMask;
-            var span = _buffers[(int)bufferId].Span.Slice((int)bufferIndex);
-            return span;
+            var span = _keyBuffers[(int)bufferId].Span.Slice((int)bufferIndex);
+            return new SkipListNode(span);
         }
 
         public SkipList(TCompare comparer, TAllocator allocator) : this(Environment.TickCount, comparer, allocator)
@@ -60,41 +56,64 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 
         public int Count => _count;
 
-        private Span<long> AllocateNode(byte height, Span<byte> key, Memory<byte> data, out long pointerStart)
+        private Span<byte> AllocateMemory(List<Memory<byte>> buffers, uint size, ref uint currentPointer, out uint startPointer)
         {
-            var sizeNeeded = key.Length + sizeof(int);
-            sizeNeeded += height * sizeof(ulong) + sizeof(byte) + s_sizeOfMemory;
-            var pointerEnd = Interlocked.Add(ref _currentAllocatedPoint, sizeNeeded);
-            pointerStart = pointerEnd - sizeNeeded;
-            var bufferStart = pointerStart >> _bufferShift;
-            var bufferEnd = pointerEnd >> _bufferShift;
+            var bufferStart = currentPointer >> _bufferShift;
+            var bufferEnd = (currentPointer + size) >> _bufferShift;
             if (bufferStart != bufferEnd)
             {
-                _buffers.Add(_allocator.AllocateNormalBuffer());
-                _currentAllocatedPoint = (_buffers.Count - 1) * _bufferSize;
-                return AllocateNode(height, key, data, out pointerStart);
+                buffers.Add(_allocator.AllocateNormalBuffer());
+                currentPointer = (uint)((buffers.Count - 1) * _bufferSize);
+                return AllocateMemory(buffers, size, ref currentPointer, out startPointer);
             }
-            // We have a buffer to write our node to, now we need to write the node data
-            var nodeSpan = _buffers[(int)bufferStart].Span.Slice((int)(pointerStart % _bufferSize), sizeNeeded);
-            // Key always goes first
-            nodeSpan = nodeSpan.Write(key.Length);
-            key.CopyTo(nodeSpan);
-            nodeSpan = nodeSpan.Slice(key.Length);
-            nodeSpan = nodeSpan.Write(data);
 
-            // Height goes next
-            nodeSpan = nodeSpan.Write((byte)height);
-            // Then all we have is the list of pointers
-            var pointerSpan = nodeSpan.NonPortableCast<byte, long>();
-            return pointerSpan;
+            var nodeSpan = buffers[(int)bufferStart].Span.Slice((int)(currentPointer & _bufferMask), (int)size);
+            startPointer = currentPointer;
+            currentPointer += size;
+            return nodeSpan;
         }
 
-        public void Insert(Span<byte> key, Memory<byte> data)
+        private Span<uint> AllocateNode(ushort height, Span<byte> key, long data, byte state, out uint pointerStart)
+        {
+            var sizeNeeded = key.Length + (sizeof(ushort) * 2) + sizeof(long) + (height << 2);
+
+            var nodeSpan = AllocateMemory(_keyBuffers, (uint)sizeNeeded, ref _currentKeyPointer, out pointerStart);
+            // Key always goes first
+            nodeSpan = nodeSpan.Write(height);
+            nodeSpan = nodeSpan.Write((ushort)key.Length);
+            nodeSpan = nodeSpan.Write(((data << 8) | state));
+            var returnSpan = nodeSpan.Slice(0, (int)(height << 2)).NonPortableCast<byte, uint>();
+            nodeSpan = nodeSpan.Slice(height << 2);
+            key.CopyTo(nodeSpan);
+            return returnSpan;
+        }
+
+        private long StoreData(Span<byte> data)
+        {
+            var span = AllocateMemory(_dataBuffers, (uint)(data.Length + 4), ref _currentDataPointer, out var startPointer);
+            span.Write(data.Length);
+            data.CopyTo(span);
+            return startPointer;
+        }
+
+        public Span<byte> GetDataFromPointer(long pointer)
+        {
+            var buffer = pointer >> _bufferShift;
+            var bufferIndex = pointer & _bufferMask;
+            var span = _dataBuffers[(int)buffer].Span.Slice((int)bufferIndex);
+            span = span.Read<int>(out var length);
+            return span.Slice(0, length);
+        }
+
+        public void Insert(Span<byte> key, Span<byte> data) => Insert(key, data, 0);
+        public void Remove(Span<byte> key) => Insert(key, new Span<byte>(), 1);
+
+        private void Insert(Span<byte> key, Span<byte> data, byte state)
         {
             var height = GetHeight();
-
-            var pointerSpan = AllocateNode((byte)height, key, data, out var pointerStart);
-            var currentPointerList = HeadNode;
+            var dataStore = StoreData(data);
+            var pointerSpan = AllocateNode((byte)height, key, dataStore, state, out var pointerStart);
+            var currentPointerList = (Span<uint>)_headNode;
             for (var level = _height; level >= 0;)
             {
                 var nextPointer = currentPointerList[level];
@@ -109,16 +128,19 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                     level--;
                     continue;
                 }
+
                 // We have a next value so lets check if it is bigger
-                var compareResult = _comparer.Compare(key, GetKey(nextPointer));
+                var nextNode = GetNodeForPointer(nextPointer);
+                var compareResult = _comparer.Compare(key, nextNode.Key);
                 if (compareResult == 0)
                 {
-                    throw new NotImplementedException("Duplicate key check, need to overwrite data");
+                    nextNode.Update(state, dataStore);
+                    return;
                 }
                 else if (compareResult > 0)
                 {
                     // bigger than the next node lets step into the next node and not change level
-                    currentPointerList = GetPointerListForNode(nextPointer);
+                    currentPointerList = nextNode.PointerTable;
                     continue;
                 }
                 else
@@ -138,20 +160,10 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             _count++;
         }
 
-        private Span<long> GetPointerListForNode(long pointerToItem)
-        {
-            var span = GetBufferForPointer(pointerToItem);
-            span = span.Read(out int size);
-            span = span.Slice(size + s_sizeOfMemory);
-            span = span.Read(out byte height);
-            var heightSize = height * sizeof(long);
-            return span.Slice(0, heightSize).NonPortableCast<byte, long>();
-        }
-
         public bool TryFind(Span<byte> key, out Span<byte> data)
         {
             var levels = _height;
-            var currentPointerTable = HeadNode;
+            var currentPointerTable = (Span<uint>)_headNode;
             for (var l = levels - 1; l >= 0;)
             {
                 if (currentPointerTable[l] == 0)
@@ -160,20 +172,28 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                     continue;
                 }
                 // we have a valid pointer to an item
-                var keyAtPointer = GetKey(currentPointerTable[l]);
+                var nodeAtPointer = GetNodeForPointer(currentPointerTable[l]);
                 // now we compare
-                var compareResult = _comparer.Compare(key, keyAtPointer);
+                var compareResult = _comparer.Compare(key, nodeAtPointer.Key);
                 // if the key is > than we need to step into this next node
                 // but not drop a level
                 if (compareResult > 0)
                 {
-                    currentPointerTable = GetPointerListForNode(currentPointerTable[l]);
+                    currentPointerTable = nodeAtPointer.PointerTable;
                     continue;
                 }
                 else if (compareResult == 0)
                 {
-                    data = GetDataFromNode(currentPointerTable[l]);
-                    return true;
+                    if (nodeAtPointer.State == 0)
+                    {
+                        data = GetDataFromPointer(nodeAtPointer.PointerTable[l]);
+                        return true;
+                    }
+                    else
+                    {
+                        data = default;
+                        return false;
+                    }
                 }
                 else if (compareResult < 0)
                 {
@@ -185,50 +205,41 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             return false;
         }
 
-        private Span<byte> GetDataFromNode(long pointerToItem)
-        {
-            var span = GetBufferForPointer(pointerToItem);
-            span = span.Read(out int size);
-            span = span.Slice(size);
-            span.Read(out Memory<byte> result);
-            return result.Span;
-        }
-
-        public void Remove(Span<byte> key)
-        {
-            var currentPointerTable = HeadNode;
-            var currentPointer = 0L;
-            for (var l = _maxHeight - 1; l >= 0;)
-            {
-                var nextPointer = currentPointerTable[l];
-                if (nextPointer == 0)
-                {
-                    l--;
-                    continue;
-                }
-                var nextKey = GetKey(nextPointer);
-                var result = _comparer.Compare(key, nextKey);
-                if (result == 0)
-                {
-                    // Matches so we need to rewrite 
-                    var nextPointerTable = GetPointerListForNode(nextPointer);
-                    currentPointerTable[l] = nextPointerTable[l];
-                    l--;
-                    continue;
-                }
-                else if (result > 0)
-                {
-                    currentPointerTable = GetPointerListForNode(nextPointer);
-                    currentPointer = nextPointer;
-                    continue;
-                }
-                else if (result < 0)
-                {
-                    l--;
-                    continue;
-                }
-            }
-        }
+        //public void Remove(Span<byte> key)
+        //{
+        //    var currentPointerTable = (Span<uint>)_headNode;
+        //    var currentPointer = 0L;
+        //    for (var l = (int)_maxHeight - 1; l >= 0;)
+        //    {
+        //        var nextPointer = currentPointerTable[l];
+        //        if (nextPointer == 0)
+        //        {
+        //            l--;
+        //            continue;
+        //        }
+        //        var nextNode = GetNodeForPointer(nextPointer);
+        //        var result = _comparer.Compare(key, nextNode.Key);
+        //        if (result == 0)
+        //        {
+        //            // Matches so we need to rewrite 
+        //            var nextPointerTable = nextNode.PointerTable;
+        //            currentPointerTable[l] = nextPointerTable[l];
+        //            l--;
+        //            continue;
+        //        }
+        //        else if (result > 0)
+        //        {
+        //            currentPointerTable = nextNode.PointerTable;
+        //            currentPointer = nextPointer;
+        //            continue;
+        //        }
+        //        else if (result < 0)
+        //        {
+        //            l--;
+        //            continue;
+        //        }
+        //    }
+        //}
 
         /// <summary>
         /// Here we get the height for an inserted element we used "fixed dice" ensure that we don't 

@@ -33,8 +33,8 @@ namespace SampleSkipLists
                 var l = list[i];
                 var bytes = Encoding.UTF8.GetBytes(l);
                 var span = new Span<byte>(bytes);
-                var mem = new Memory<byte>(bytes);
-                skipList.Insert(span, bytes);
+                
+                skipList.Insert(span, span);
                 //sortedDict.Add(l, l);
             }
 
