@@ -12,4 +12,5 @@
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipList`2.GetDataFromNode(System.Int64)~System.Span{System.Byte}")]
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipList`2.GetDataFromNode(System.Int64)~System.Int64")]
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipListNode.#ctor(System.Span{System.Byte})")]
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipListNode.#ctor(System.Memory{System.Byte})")]
 

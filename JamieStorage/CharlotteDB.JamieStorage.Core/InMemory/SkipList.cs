@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using CharlotteDB.Core;
 using CharlotteDB.JamieStorage.Core.Allocation;
 using CharlotteDB.JamieStorage.Core.Keys;
 
 namespace CharlotteDB.JamieStorage.Core.InMemory
 {
-    public class SkipList<TCompare, TAllocator> where TCompare : IKeyComparer where TAllocator : IAllocator
+    public class SkipList<TCompare, TAllocator>
+        where TCompare : IKeyComparer where TAllocator : IAllocator
     {
         private List<Memory<byte>> _keyBuffers = new List<Memory<byte>>();
         private List<Memory<byte>> _dataBuffers = new List<Memory<byte>>();
@@ -24,6 +26,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         private int _bufferShift;
         private uint _bufferMask;
         private uint[] _headNode;
+        private long _currentNodePointer = -1;
 
         public SkipList(int seed, TCompare comparer, TAllocator allocator)
         {
@@ -40,21 +43,35 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             _headNode = new uint[_maxHeight];
         }
 
+        public SkipList(TCompare comparer, TAllocator allocator) : this(Environment.TickCount, comparer, allocator)
+        {
+        }
+
         public long SpaceUsed => _currentDataPointer + _currentKeyPointer;
+        public int Count => _count;
+
+        public MemoryNode CurrentNode
+        {
+            get
+            {
+                var node = GetNodeForPointer((uint)_currentNodePointer);
+                var mem = new MemoryNode()
+                {
+                    Data = GetDataFromPointer(node.DataPointer),
+                    Key = node.Key,
+                    State = (ItemState)node.State
+                };
+                return mem;
+            }
+        }
 
         private SkipListNode GetNodeForPointer(uint pointerToItem)
         {
             var bufferId = pointerToItem >> _bufferShift;
             var bufferIndex = pointerToItem & _bufferMask;
-            var span = _keyBuffers[(int)bufferId].Span.Slice((int)bufferIndex);
+            var span = _keyBuffers[(int)bufferId].Slice((int)bufferIndex);
             return new SkipListNode(span);
         }
-
-        public SkipList(TCompare comparer, TAllocator allocator) : this(Environment.TickCount, comparer, allocator)
-        {
-        }
-
-        public int Count => _count;
 
         private Span<byte> AllocateMemory(List<Memory<byte>> buffers, uint size, ref uint currentPointer, out uint startPointer)
         {
@@ -79,9 +96,9 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 
             var nodeSpan = AllocateMemory(_keyBuffers, (uint)sizeNeeded, ref _currentKeyPointer, out pointerStart);
             // Key always goes first
-            nodeSpan = nodeSpan.Write(height);
-            nodeSpan = nodeSpan.Write((ushort)key.Length);
-            nodeSpan = nodeSpan.Write(((data << 8) | state));
+            nodeSpan = nodeSpan.WriteAdvance(height);
+            nodeSpan = nodeSpan.WriteAdvance((ushort)key.Length);
+            nodeSpan = nodeSpan.WriteAdvance(((data << 8) | state));
             var returnSpan = nodeSpan.Slice(0, (int)(height << 2)).NonPortableCast<byte, uint>();
             nodeSpan = nodeSpan.Slice(height << 2);
             key.CopyTo(nodeSpan);
@@ -90,22 +107,23 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 
         private long StoreData(Span<byte> data)
         {
-            var span = AllocateMemory(_dataBuffers, (uint)(data.Length + 4), ref _currentDataPointer, out var startPointer);
-            span.Write(data.Length);
+            var span = AllocateMemory(_dataBuffers, (uint)(data.Length + sizeof(int)), ref _currentDataPointer, out var startPointer);
+            span = span.WriteAdvance(data.Length);
             data.CopyTo(span);
             return startPointer;
         }
 
-        public Span<byte> GetDataFromPointer(long pointer)
+        public Memory<byte> GetDataFromPointer(long pointer)
         {
             var buffer = pointer >> _bufferShift;
             var bufferIndex = pointer & _bufferMask;
-            var span = _dataBuffers[(int)buffer].Span.Slice((int)bufferIndex);
-            span = span.Read<int>(out var length);
-            return span.Slice(0, length);
+            var memory = _dataBuffers[(int)buffer].Slice((int)bufferIndex);
+            var length = memory.Span.Read<int>();
+            return memory.Slice(sizeof(int), length);
         }
 
         public void Insert(Span<byte> key, Span<byte> data) => Insert(key, data, 0);
+
         public void Remove(Span<byte> key) => Insert(key, new Span<byte>(), 1);
 
         private void Insert(Span<byte> key, Span<byte> data, byte state)
@@ -131,7 +149,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
 
                 // We have a next value so lets check if it is bigger
                 var nextNode = GetNodeForPointer(nextPointer);
-                var compareResult = _comparer.Compare(key, nextNode.Key);
+                var compareResult = _comparer.Compare(key, nextNode.Key.Span);
                 if (compareResult == 0)
                 {
                     nextNode.Update(state, dataStore);
@@ -160,7 +178,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             _count++;
         }
 
-        public bool TryFind(Span<byte> key, out Span<byte> data)
+        public SearchResult TryFind(Span<byte> key, out Memory<byte> data)
         {
             var levels = _height;
             var currentPointerTable = (Span<uint>)_headNode;
@@ -174,7 +192,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                 // we have a valid pointer to an item
                 var nodeAtPointer = GetNodeForPointer(currentPointerTable[l]);
                 // now we compare
-                var compareResult = _comparer.Compare(key, nodeAtPointer.Key);
+                var compareResult = _comparer.Compare(key, nodeAtPointer.Key.Span);
                 // if the key is > than we need to step into this next node
                 // but not drop a level
                 if (compareResult > 0)
@@ -187,12 +205,12 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                     if (nodeAtPointer.State == 0)
                     {
                         data = GetDataFromPointer(nodeAtPointer.PointerTable[l]);
-                        return true;
+                        return SearchResult.Found;
                     }
                     else
                     {
                         data = default;
-                        return false;
+                        return SearchResult.Deleted;
                     }
                 }
                 else if (compareResult < 0)
@@ -202,44 +220,8 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                 }
             }
 
-            return false;
+            return SearchResult.NotFound;
         }
-
-        //public void Remove(Span<byte> key)
-        //{
-        //    var currentPointerTable = (Span<uint>)_headNode;
-        //    var currentPointer = 0L;
-        //    for (var l = (int)_maxHeight - 1; l >= 0;)
-        //    {
-        //        var nextPointer = currentPointerTable[l];
-        //        if (nextPointer == 0)
-        //        {
-        //            l--;
-        //            continue;
-        //        }
-        //        var nextNode = GetNodeForPointer(nextPointer);
-        //        var result = _comparer.Compare(key, nextNode.Key);
-        //        if (result == 0)
-        //        {
-        //            // Matches so we need to rewrite 
-        //            var nextPointerTable = nextNode.PointerTable;
-        //            currentPointerTable[l] = nextPointerTable[l];
-        //            l--;
-        //            continue;
-        //        }
-        //        else if (result > 0)
-        //        {
-        //            currentPointerTable = nextNode.PointerTable;
-        //            currentPointer = nextPointer;
-        //            continue;
-        //        }
-        //        else if (result < 0)
-        //        {
-        //            l--;
-        //            continue;
-        //        }
-        //    }
-        //}
 
         /// <summary>
         /// Here we get the height for an inserted element we used "fixed dice" ensure that we don't 
@@ -247,7 +229,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
         /// </summary>
         /// <param name="maxLevel"></param>
         /// <returns></returns>
-        protected virtual int GetHeight()
+        protected int GetHeight()
         {
             var newHeight = 1;
             while ((_random.NextDouble() < _heightProbability))
@@ -263,6 +245,62 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
                 return _height;
             }
             return newHeight;
+        }
+
+        public void Reset() => _currentNodePointer = -1;
+
+        public bool Next()
+        {
+            if (_currentNodePointer == -1)
+            {
+                _currentNodePointer = _headNode[0];
+                return true;
+            }
+
+            var skip = GetNodeForPointer((uint)_currentNodePointer);
+            if (skip.PointerTable[0] == 0)
+            {
+                return false;
+            }
+
+            _currentNodePointer = skip.PointerTable[0];
+            return true;
+        }
+
+        internal void HardRemoveNode(Span<byte> key)
+        {
+            var currentPointerTable = (Span<uint>)_headNode;
+            var currentPointer = 0L;
+            for (var l = (int)_maxHeight - 1; l >= 0;)
+            {
+                var nextPointer = currentPointerTable[l];
+                if (nextPointer == 0)
+                {
+                    l--;
+                    continue;
+                }
+                var nextNode = GetNodeForPointer(nextPointer);
+                var result = _comparer.Compare(key, nextNode.Key.Span);
+                if (result == 0)
+                {
+                    // Matches so we need to rewrite 
+                    var nextPointerTable = nextNode.PointerTable;
+                    currentPointerTable[l] = nextPointerTable[l];
+                    l--;
+                    continue;
+                }
+                else if (result > 0)
+                {
+                    currentPointerTable = nextNode.PointerTable;
+                    currentPointer = nextPointer;
+                    continue;
+                }
+                else if (result < 0)
+                {
+                    l--;
+                    continue;
+                }
+            }
         }
     }
 }

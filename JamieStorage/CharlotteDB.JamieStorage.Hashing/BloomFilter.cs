@@ -1,33 +1,37 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace CharlotteDB.JamieStorage.Hashing
 {
-    public class BloomFilter<THash> where THash : IHash, new()
+    public class BloomFilter<THash> : IBloomFilter where THash : IHash, new()
     {
         private THash _hasher;
-        private int _estimatedElements;
-        private int _bitsPerElement;
         private int _bitCount;
         private int _numberOfHashes;
         private int[] _backingArray;
         private ThreadLocal<long> _count = new ThreadLocal<long>(true);
         private ThreadLocal<ulong[]> _hashWorkingSet;
 
-        public BloomFilter(int estimatedElements, int bitsPerElement, THash hasher, int numberOfHashes)
+        public BloomFilter(int estimatedElements, int bitsPerElement, THash hasher)
+            : this(estimatedElements * bitsPerElement, hasher, (int)Math.Round(Math.Log(2.0) * bitsPerElement / estimatedElements))
         {
-            _bitsPerElement = bitsPerElement;
-            _estimatedElements = estimatedElements;
+        }
+
+        public BloomFilter(int bitCount, THash hasher, int numberOfHashes)
+        {
             _hasher = hasher;
             _numberOfHashes = numberOfHashes;
             _hashWorkingSet = new ThreadLocal<ulong[]>(() => new ulong[_numberOfHashes]);
 
-            _bitCount = _bitsPerElement * _estimatedElements;
-            _backingArray = new int[(_bitCount / 32) + 1];
+            _bitCount = bitCount;
+            _backingArray = new int[(_bitCount / (sizeof(int) * 8)) + 1];
+            _bitCount = _backingArray.Length * sizeof(int) * 8;
         }
 
         public long Count => _count.Values.Sum();
@@ -100,6 +104,14 @@ namespace CharlotteDB.JamieStorage.Hashing
             return true;
         }
 
+        public Task SaveAsync(Stream outputStream)
+        {
+            //var backingArray = new byte[OutputSize];
+            //var span = new Span<byte>(backingArray);
+            //span = span.Write
+            throw new NotImplementedException();
+        }
+
         public double FalsePositiveErrorRate
         {
             get
@@ -111,5 +123,7 @@ namespace CharlotteDB.JamieStorage.Hashing
                 return x;
             }
         }
+
+        public int OutputSize => (_bitCount / 8) + sizeof(int) * 2 + sizeof(long);
     }
 }

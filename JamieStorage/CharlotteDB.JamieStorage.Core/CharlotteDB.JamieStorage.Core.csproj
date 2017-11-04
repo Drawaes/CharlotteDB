@@ -9,4 +9,9 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CharlotteDB.Core\CharlotteDB.Core.csproj" />
+    <ProjectReference Include="..\CharlotteDB.JamieStorage.Hashing\CharlotteDB.JamieStorage.Hashing.csproj" />
+  </ItemGroup>
+
 </Project>

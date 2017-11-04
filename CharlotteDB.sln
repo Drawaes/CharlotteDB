@@ -19,7 +19,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docs", "Docs", "{6F642AFD-F
 	ProjectSection(SolutionItems) = preProject
 		Docs\DatabaseMetaFile.md = Docs\DatabaseMetaFile.md
 		Docs\SkipListDesign.md = Docs\SkipListDesign.md
+		docs\StorageTable.md = docs\StorageTable.md
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CharlotteDB.Core", "src\CharlotteDB.Core\CharlotteDB.Core.csproj", "{E5931E2E-9942-40F2-98C9-7404F0162331}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -79,6 +82,18 @@ Global
 		{36214DCE-47CB-4FCF-94BD-D9E10D03473B}.Release|x64.Build.0 = Release|Any CPU
 		{36214DCE-47CB-4FCF-94BD-D9E10D03473B}.Release|x86.ActiveCfg = Release|Any CPU
 		{36214DCE-47CB-4FCF-94BD-D9E10D03473B}.Release|x86.Build.0 = Release|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Debug|x64.Build.0 = Debug|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Debug|x86.Build.0 = Debug|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Release|x64.ActiveCfg = Release|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Release|x64.Build.0 = Release|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Release|x86.ActiveCfg = Release|Any CPU
+		{E5931E2E-9942-40F2-98C9-7404F0162331}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -88,6 +103,7 @@ Global
 		{A7CAA8D5-905B-4999-8011-10B46B013CD3} = {7932D7AD-6D06-43EF-BE6F-9EBC10E11C23}
 		{2336E542-A82A-496D-9304-D309A38C23F3} = {7932D7AD-6D06-43EF-BE6F-9EBC10E11C23}
 		{36214DCE-47CB-4FCF-94BD-D9E10D03473B} = {F1BC17F8-44EF-49E0-A93A-D15F8A93BF9F}
+		{E5931E2E-9942-40F2-98C9-7404F0162331} = {7932D7AD-6D06-43EF-BE6F-9EBC10E11C23}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9D37AF91-05AE-4DFF-8C28-A5A3E1EC05B1}

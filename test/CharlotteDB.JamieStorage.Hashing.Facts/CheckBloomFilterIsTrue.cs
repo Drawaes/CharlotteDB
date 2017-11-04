@@ -14,7 +14,7 @@ namespace CharlotteDB.JamieStorage.Hashing.Facts
             var list = new byte[count][];
             var rnd = new Random();
 
-            var bloom = new BloomFilter<FNVHash>(count, 4, new FNVHash(), 3);
+            var bloom = new BloomFilter<FNVHash>(count, 4, new FNVHash());
 
             for (var i = 0; i < list.Length; i++)
             {
