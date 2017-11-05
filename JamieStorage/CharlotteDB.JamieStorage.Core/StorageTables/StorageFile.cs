@@ -145,8 +145,8 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                 {
                     return SearchResult.Found;
                 }
-                var mem = await FindBlock(key, index);
-                if (mem.Length == 0)
+                var memLocation = await FindBlock(key, index);
+                if (memLocation == 0)
                 {
                     return SearchResult.NotFound;
                 }
@@ -155,7 +155,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             return SearchResult.NotFound;
         }
 
-        private async Task<Memory<byte>> FindBlock(Memory<byte> key, long blockStart)
+        private async Task<long> FindBlock(Memory<byte> key, long blockStart)
         {
             var lengthsBuffer = new byte[6];
             var keyBuffer = ArrayPool<byte>.Shared.Rent(256);

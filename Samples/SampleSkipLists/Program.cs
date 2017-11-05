@@ -49,6 +49,10 @@ namespace SampleSkipLists
                         await database.PutAsync(span, span);
                     }
                 }
+
+                var b = Encoding.UTF8.GetBytes(list[0]);
+                var mem = new Memory<byte>(b);
+                var resultType =  database.TryGetData(mem.Span, out var result);
             }
             _event.Set();
         }

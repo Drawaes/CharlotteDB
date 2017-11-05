@@ -33,10 +33,7 @@ namespace CharlotteDB.JamieStorage.Core
         }
 
         public Database(string folder, TComparer comparer, TAllocator allocator)
-            : this(folder, new DatabaseSettings()
-            {
-                MaxInMemoryTableUse = 1024 * 1024 * 14,
-            }, comparer, allocator)
+            : this(folder, new DatabaseSettings() { MaxInMemoryTableUse = 1024 * 1024 * 5 }, comparer, allocator)
         {
         }
 
@@ -52,8 +49,24 @@ namespace CharlotteDB.JamieStorage.Core
                     result = _oldSkipList.TryFind(key, out data);
                     if (result == SearchResult.NotFound)
                     {
-                        throw new NotImplementedException("Need to keep searching down the layers");
+                        for (var i = _storageTables.Count - 1; i >= 0; i--)
+                        {
+                            throw new NotImplementedException();
+                        }
+
+                        data = default;
+                        return false;
                     }
+                }
+                else
+                {
+                    for (var i = _storageTables.Count - 1; i >= 0; i--)
+                    {
+                        throw new NotImplementedException();
+                    }
+
+                    data = default;
+                    return false;
                 }
             }
             return result == SearchResult.Found;
@@ -81,11 +94,11 @@ namespace CharlotteDB.JamieStorage.Core
 
         internal async Task<SearchResult> FindNodeAsync(Memory<byte> key)
         {
-            for(var i = _storageTables.Count -1; i >= 0;i--)
+            for (var i = _storageTables.Count - 1; i >= 0; i--)
             {
                 var st = _storageTables[i];
                 var searchResult = await st.FindNodeAsync(key);
-                if(searchResult == SearchResult.Deleted || searchResult == SearchResult.Found)
+                if (searchResult == SearchResult.Deleted || searchResult == SearchResult.Found)
                 {
                     return searchResult;
                 }
@@ -108,7 +121,7 @@ namespace CharlotteDB.JamieStorage.Core
         public void Dispose()
         {
             WriteInMemoryTable().GetAwaiter().GetResult();
-            foreach(var st in _storageTables)
+            foreach (var st in _storageTables)
             {
                 st.Dispose();
             }
