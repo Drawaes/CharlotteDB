@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using CharlotteDB.JamieStorage.Core.Allocation;
-using CharlotteDB.JamieStorage.Core.InMemory;
-using CharlotteDB.JamieStorage.Core.Keys;
+using CharlotteDB.Core.Allocation;
+using CharlotteDB.Core.Keys;
+using CharlotteDB.JamieStorage.InMemory;
 using Xunit;
 
 namespace CharlotteDB.JamieStorage.Hashing
@@ -15,7 +15,7 @@ namespace CharlotteDB.JamieStorage.Hashing
         {
             var comparer = new ByteByByteComparer();
             var allocator = new DummyAllocator(2048);
-            var skipList = new SkipList<ByteByByteComparer, DummyAllocator>(2048, comparer, allocator);
+            var skipList = new SkipList<ByteByByteComparer>(2048, comparer, allocator);
 
             var data = new byte[500];
             

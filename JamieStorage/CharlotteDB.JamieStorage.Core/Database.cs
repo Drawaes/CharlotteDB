@@ -1,75 +1,81 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using CharlotteDB.JamieStorage.Core.Allocation;
-using CharlotteDB.JamieStorage.Core.InMemory;
-using CharlotteDB.JamieStorage.Core.Keys;
+using CharlotteDB.Core;
+using CharlotteDB.Core.Allocation;
+using CharlotteDB.Core.Keys;
+using CharlotteDB.JamieStorage.InMemory;
 
 namespace CharlotteDB.JamieStorage.Core
 {
-    public class Database<TComparer, TAllocator> : IDisposable
-        where TComparer : IKeyComparer
-        where TAllocator : IAllocator
+    public class Database<TComparer> : IDisposable where TComparer : IKeyComparer
     {
         private string _folder;
-        private SkipList<TComparer, TAllocator> _currentSkipList;
-        private SkipList<TComparer, TAllocator> _oldSkipList;
+        private SkipList<TComparer> _currentSkipList;
+        private SkipList<TComparer> _oldSkipList;
         private SemaphoreSlim _writeSemaphore = new SemaphoreSlim(1);
-        private List<StorageTables.StorageFile<TComparer, TAllocator>> _storageTables = new List<StorageTables.StorageFile<TComparer, TAllocator>>();
+        private List<StorageTables.StorageFile<TComparer>> _storageTables = new List<StorageTables.StorageFile<TComparer>>();
         private DatabaseSettings _settings;
         private TComparer _comparer;
-        private TAllocator _allocator;
+        private Allocator _allocator;
         private int _currentLevelOneCount = 0;
 
-        public Database(string folder, DatabaseSettings settings, TComparer comparer, TAllocator allocator)
+        public Database(string folder, DatabaseSettings settings, TComparer comparer, Allocator allocator)
         {
             _allocator = allocator;
             _comparer = comparer;
             _folder = folder;
             _settings = settings;
-            _currentSkipList = new SkipList<TComparer, TAllocator>(comparer, allocator);
+            _currentSkipList = new SkipList<TComparer>(comparer, allocator);
         }
 
-        public Database(string folder, TComparer comparer, TAllocator allocator)
-            : this(folder, new DatabaseSettings() { MaxInMemoryTableUse = 1024 * 1024 * 5 }, comparer, allocator)
+        public Database(string folder, TComparer comparer, Allocator allocator) : this(folder, new DatabaseSettings() { MaxInMemoryTableUse = 1024 * 1024 * 5 }, comparer, allocator)
         {
         }
 
         public TComparer Comparer => _comparer;
 
-        public bool TryGetData(Span<byte> key, out Memory<byte> data)
+        public async Task<(bool found, Memory<byte> data)> TryGetDataAsync(Memory<byte> key)
         {
-            var result = _currentSkipList.TryFind(key, out data);
-            if (result == SearchResult.NotFound)
+            var result = _currentSkipList.TryFind(key.Span, out var data);
+            switch (result)
             {
-                if (_oldSkipList != null)
-                {
-                    result = _oldSkipList.TryFind(key, out data);
-                    if (result == SearchResult.NotFound)
+                case SearchResult.Deleted:
+                    return (false, default);
+                case SearchResult.Found:
+                    return (true, data);
+                case SearchResult.NotFound:
+                    if (_oldSkipList != null)
                     {
-                        for (var i = _storageTables.Count - 1; i >= 0; i--)
+                        result = _oldSkipList.TryFind(key.Span, out data);
+                        if (result == SearchResult.Deleted)
                         {
-                            throw new NotImplementedException();
+                            return (false, default);
                         }
-
-                        data = default;
-                        return false;
+                        else if (result == SearchResult.Found)
+                        {
+                            return (true, data);
+                        }
                     }
-                }
-                else
+                    break;
+            }
+
+            for (var i = _storageTables.Count - 1; i >= 0; i--)
+            {
+                var outputResult = await _storageTables[i].TryGetDataAsync(key);
+                if (outputResult.result == SearchResult.Found)
                 {
-                    for (var i = _storageTables.Count - 1; i >= 0; i--)
-                    {
-                        throw new NotImplementedException();
-                    }
-
-                    data = default;
-                    return false;
+                    return (true, outputResult.data);
+                }
+                else if (outputResult.result == SearchResult.Deleted)
+                {
+                    return (false, default);
                 }
             }
-            return result == SearchResult.Found;
+
+            return (false, default);
         }
 
         public Task PutAsync(Memory<byte> key, Memory<byte> data)
@@ -79,6 +85,7 @@ namespace CharlotteDB.JamieStorage.Core
             {
                 return WriteInMemoryTable();
             }
+
             return Task.CompletedTask;
         }
 
@@ -89,6 +96,7 @@ namespace CharlotteDB.JamieStorage.Core
             {
                 return WriteInMemoryTable();
             }
+
             return Task.CompletedTask;
         }
 
@@ -103,14 +111,15 @@ namespace CharlotteDB.JamieStorage.Core
                     return searchResult;
                 }
             }
+
             return SearchResult.NotFound;
         }
 
         private async Task WriteInMemoryTable()
         {
             _oldSkipList = _currentSkipList;
-            _currentSkipList = new SkipList<TComparer, TAllocator>(_comparer, _allocator);
-            var storage = new StorageTables.StorageFile<TComparer, TAllocator>(NextFileTableName(), 5, this);
+            _currentSkipList = new SkipList<TComparer>(_comparer, _allocator);
+            var storage = new StorageTables.StorageFile<TComparer>(NextFileTableName(), 5, this);
             await storage.WriteInMemoryTableAsync(_oldSkipList);
             _storageTables.Add(storage);
             _oldSkipList = null;

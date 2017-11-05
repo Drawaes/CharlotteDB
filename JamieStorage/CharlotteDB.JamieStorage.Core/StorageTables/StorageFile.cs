@@ -3,34 +3,30 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading.Tasks;
 using CharlotteDB.Core;
-using CharlotteDB.JamieStorage.Core.Allocation;
-using CharlotteDB.JamieStorage.Core.InMemory;
-using CharlotteDB.JamieStorage.Core.Keys;
+using CharlotteDB.Core.Keys;
+using CharlotteDB.JamieStorage.InMemory;
 
 namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
-    public class StorageFile<TComparer, TAllocator> : IDisposable
-        where TComparer : IKeyComparer
-        where TAllocator : IAllocator
+    public class StorageFile<TComparer> : IDisposable where TComparer : IKeyComparer
     {
         private string _fileName;
         private int _bitsToUseForBloomFilter;
         private Hashing.BloomFilter<Hashing.FNV1Hash> _bloomFilter;
-        private Database<TComparer, TAllocator> _database;
+        private Database<TComparer> _database;
         private IndexTable _indexTable;
         private MemoryMappedFile _memoryMappedFile;
 
-        public StorageFile(string fileName, int bitsToUseForBloomFilter, Database<TComparer, TAllocator> database)
+        public StorageFile(string fileName, int bitsToUseForBloomFilter, Database<TComparer> database)
         {
             _bitsToUseForBloomFilter = bitsToUseForBloomFilter;
             _fileName = fileName;
             _database = database;
         }
 
-        public async Task WriteInMemoryTableAsync(SkipList<TComparer, TAllocator> inMemory)
+        public async Task WriteInMemoryTableAsync(SkipList<TComparer> inMemory)
         {
             var tempBuffer = new byte[8];
 
@@ -82,6 +78,21 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             LoadFile();
         }
 
+        internal async Task<(SearchResult result, Memory<byte> data)> TryGetDataAsync(Memory<byte> key)
+        {
+            if (!_bloomFilter.PossiblyContains(key.Span))
+            {
+                return (SearchResult.NotFound, default);
+            }
+            var (index, exactMatch) = await FindBlockToSearchAsync(key);
+            if (exactMatch)
+            {
+                throw new NotImplementedException();
+                //return (SearchResult.Found, );
+            }
+            throw new NotImplementedException();
+        }
+
         private void LoadFile()
         {
             _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open);
@@ -102,7 +113,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         private MemoryMappedViewStream CreateIndexStream() => _memoryMappedFile.CreateViewStream(_indexTable.IndexFilterIndex, _indexTable.IndexFilterLength);
 
-        private async Task<int> WriteDeletedRecordsAsync(SkipList<TComparer, TAllocator> inMemory, byte[] tempBuffer, System.IO.FileStream file)
+        private async Task<int> WriteDeletedRecordsAsync(SkipList<TComparer> inMemory, byte[] tempBuffer, System.IO.FileStream file)
         {
             await file.WriteAsync(tempBuffer);
             var deletedCount = 0;
@@ -133,21 +144,21 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         internal async Task<SearchResult> FindNodeAsync(Memory<byte> key)
         {
-            if (_bloomFilter.PossiblyContains(key.Span))
+            if (!_bloomFilter.PossiblyContains(key.Span))
             {
-                var (index, exactMatch) = await FindBlockToSearchAsync(key);
-                if (exactMatch)
-                {
-                    return SearchResult.Found;
-                }
-                var memLocation = await FindBlockAsync(key, index);
-                if (memLocation == 0)
-                {
-                    return SearchResult.NotFound;
-                }
+                return SearchResult.NotFound;
+            }
+            var (index, exactMatch) = await FindBlockToSearchAsync(key);
+            if (exactMatch)
+            {
                 return SearchResult.Found;
             }
-            return SearchResult.NotFound;
+            var memLocation = await FindBlockAsync(key, index);
+            if (memLocation == 0)
+            {
+                return SearchResult.NotFound;
+            }
+            return SearchResult.Found;
         }
 
         private async Task<long> FindBlockAsync(Memory<byte> key, long blockStart)

@@ -1,9 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Numerics;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CharlotteDB.Core;
@@ -112,8 +109,8 @@ namespace CharlotteDB.JamieStorage.Hashing
             span = span.WriteAdvance(OutputSize - sizeof(int));
             span = span.WriteAdvance(_numberOfHashes);
             span = span.WriteAdvance(Count);
-            ((Span<int>)_backingArray).NonPortableCast<int, byte>().CopyTo(span);
-            return outputStream.WriteAsync(backingArray);
+            _backingArray.AsSpan().NonPortableCast<int, byte>().CopyTo(span);
+            return outputStream.WriteAsync(backingArray, 0, backingArray.Length);
         }
 
         public double FalsePositiveErrorRate

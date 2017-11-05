@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
-using System.Text;
 
-namespace CharlotteDB.JamieStorage.Core.Keys
+namespace CharlotteDB.Core.Keys
 {
     public interface IKeyComparer
     {

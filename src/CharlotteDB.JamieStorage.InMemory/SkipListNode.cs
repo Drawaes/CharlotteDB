@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Text;
 using CharlotteDB.Core;
 
-namespace CharlotteDB.JamieStorage.Core.InMemory
+namespace CharlotteDB.JamieStorage.InMemory
 {
-    public ref struct SkipListNode
+    internal ref struct SkipListNode
     {
         private Memory<byte> _bufferStart;
         private ushort _height;

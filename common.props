@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <Product>CharlotteDB</Product>
+    <VersionSuffix Condition="'$(VersionSuffix)'!='' AND '$(BuildNumber)' != ''">$(VersionSuffix)-$(BuildNumber)</VersionSuffix>
+    <PackageLicenseUrl>https://github.com/Drawaes/CharlotteDB/blob/master/LICENSE</PackageLicenseUrl>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Drawaes/CharlotteDB</RepositoryUrl>
+    <Copyright>Tim Seaward</Copyright>
+    <Authors>Tim Seaward</Authors>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

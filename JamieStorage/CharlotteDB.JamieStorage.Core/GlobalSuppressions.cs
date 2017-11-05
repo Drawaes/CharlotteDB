@@ -13,4 +13,6 @@
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipList`2.GetDataFromNode(System.Int64)~System.Int64")]
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipListNode.#ctor(System.Span{System.Byte})")]
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0007:Use implicit type", Justification = "<Pending>", Scope = "member", Target = "~M:CharlotteDB.JamieStorage.Core.InMemory.SkipListNode.#ctor(System.Memory{System.Byte})")]
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1027:Mark enums with FlagsAttribute", Justification = "<Pending>", Scope = "type", Target = "~T:CharlotteDB.JamieStorage.Core.InMemory.ItemState")]
 
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA9999:Analyzer version mismatch", Justification = "<Pending>")]

@@ -1,8 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
+  <Import Project="../../common.props" />
   <PropertyGroup>
     <TargetFramework>netcoreapp2.1</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-
+  <ItemGroup>
+    <PackageReference Include="System.Buffers.Primitives">
+      <Version>0.1.0-e171104-4</Version>
+    </PackageReference>
+  </ItemGroup>
+  
 </Project>

@@ -1,13 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="../../common.props" />
+  <Import Project="../../common.props"/>
   <PropertyGroup>
     <TargetFramework>netcoreapp2.1</TargetFramework>
-    
   </PropertyGroup>
 
-
   <ItemGroup>
-    <ProjectReference Include="..\..\src\CharlotteDB.Core\CharlotteDB.Core.csproj" />
+    <ProjectReference Include="..\CharlotteDB.Core\CharlotteDB.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,10 +4,10 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CharlotteDB.Core.Allocation;
+using CharlotteDB.Core.Keys;
 using CharlotteDB.JamieStorage.Core;
-using CharlotteDB.JamieStorage.Core.Allocation;
-using CharlotteDB.JamieStorage.Core.InMemory;
-using CharlotteDB.JamieStorage.Core.Keys;
+using CharlotteDB.JamieStorage.InMemory;
 
 namespace SampleSkipLists
 {
@@ -52,7 +52,7 @@ namespace SampleSkipLists
 
                 var b = Encoding.UTF8.GetBytes(list[0]);
                 var mem = new Memory<byte>(b);
-                var resultType =  database.TryGetData(mem.Span, out var result);
+                var resultType =  database.TryGetDataAsync(mem);
             }
             _event.Set();
         }
@@ -62,7 +62,7 @@ namespace SampleSkipLists
 
             var comparer = new ByteByByteComparer();
             var allocator = new DummyAllocator(1024 * 1024);
-            var skipList = new SkipList<ByteByByteComparer, DummyAllocator>(comparer, allocator);
+            var skipList = new SkipList<ByteByByteComparer>(comparer, allocator);
             var sortedDict = new SortedDictionary<string, string>();
             var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
 

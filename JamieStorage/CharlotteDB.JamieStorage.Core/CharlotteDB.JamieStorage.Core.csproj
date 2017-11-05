@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CharlotteDB.Core\CharlotteDB.Core.csproj" />
+    <ProjectReference Include="..\..\src\CharlotteDB.JamieStorage.InMemory\CharlotteDB.JamieStorage.InMemory.csproj" />
     <ProjectReference Include="..\CharlotteDB.JamieStorage.Hashing\CharlotteDB.JamieStorage.Hashing.csproj" />
   </ItemGroup>
 
