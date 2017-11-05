@@ -99,7 +99,7 @@ namespace CharlotteDB.JamieStorage.Core.InMemory
             nodeSpan = nodeSpan.WriteAdvance(height);
             nodeSpan = nodeSpan.WriteAdvance((ushort)key.Length);
             nodeSpan = nodeSpan.WriteAdvance(((data << 8) | state));
-            var returnSpan = nodeSpan.Slice(0, (int)(height << 2)).NonPortableCast<byte, uint>();
+            var returnSpan = nodeSpan.Slice(0, height << 2).NonPortableCast<byte, uint>();
             nodeSpan = nodeSpan.Slice(height << 2);
             key.CopyTo(nodeSpan);
             return returnSpan;

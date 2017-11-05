@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CharlotteDB.Core;
 
 namespace CharlotteDB.JamieStorage.Hashing
 {
@@ -106,10 +107,13 @@ namespace CharlotteDB.JamieStorage.Hashing
 
         public Task SaveAsync(Stream outputStream)
         {
-            //var backingArray = new byte[OutputSize];
-            //var span = new Span<byte>(backingArray);
-            //span = span.Write
-            throw new NotImplementedException();
+            var backingArray = new byte[OutputSize];
+            var span = new Span<byte>(backingArray);
+            span = span.WriteAdvance(OutputSize - sizeof(int));
+            span = span.WriteAdvance(_numberOfHashes);
+            span = span.WriteAdvance(Count);
+            ((Span<int>)_backingArray).NonPortableCast<int, byte>().CopyTo(span);
+            return outputStream.WriteAsync(backingArray);
         }
 
         public double FalsePositiveErrorRate

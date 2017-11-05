@@ -9,7 +9,7 @@ using CharlotteDB.JamieStorage.Core.Keys;
 
 namespace CharlotteDB.JamieStorage.Core
 {
-    public class Database<TComparer, TAllocator>
+    public class Database<TComparer, TAllocator> : IDisposable
         where TComparer : IKeyComparer
         where TAllocator : IAllocator
     {
@@ -35,10 +35,12 @@ namespace CharlotteDB.JamieStorage.Core
         public Database(string folder, TComparer comparer, TAllocator allocator)
             : this(folder, new DatabaseSettings()
             {
-                MaxInMemoryTableUse = 1024 * 1024 * 4,
+                MaxInMemoryTableUse = 1024 * 1024 * 14,
             }, comparer, allocator)
         {
         }
+
+        public TComparer Comparer => _comparer;
 
         public bool TryGetData(Span<byte> key, out Memory<byte> data)
         {
@@ -95,11 +97,21 @@ namespace CharlotteDB.JamieStorage.Core
         {
             _oldSkipList = _currentSkipList;
             _currentSkipList = new SkipList<TComparer, TAllocator>(_comparer, _allocator);
-            var storage = new StorageTables.StorageFile<TComparer, TAllocator>(NextFileTableName(), 3, this);
+            var storage = new StorageTables.StorageFile<TComparer, TAllocator>(NextFileTableName(), 5, this);
             await storage.WriteInMemoryTableAsync(_oldSkipList);
+            _storageTables.Add(storage);
             _oldSkipList = null;
         }
 
         private string NextFileTableName() => System.IO.Path.Combine(_folder, $"table-1-{_currentLevelOneCount++}.bin");
+
+        public void Dispose()
+        {
+            WriteInMemoryTable().GetAwaiter().GetResult();
+            foreach(var st in _storageTables)
+            {
+                st.Dispose();
+            }
+        }
     }
 }
