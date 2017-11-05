@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using CharlotteDB.Core;
@@ -19,10 +20,8 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private int _bitsToUseForBloomFilter;
         private Hashing.BloomFilter<Hashing.FNV1Hash> _bloomFilter;
         private Database<TComparer, TAllocator> _database;
-        private long _bloomFilterIndex;
-        private long _indexFilter;
+        private IndexTable _indexTable;
         private MemoryMappedFile _memoryMappedFile;
-        private MemoryMappedViewStream _indexView;
 
         public StorageFile(string fileName, int bitsToUseForBloomFilter, Database<TComparer, TAllocator> database)
         {
@@ -37,7 +36,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
             using (var file = System.IO.File.Open(_fileName, System.IO.FileMode.CreateNew, System.IO.FileAccess.Write, System.IO.FileShare.None))
             {
-                var deletedCount = await WriteDeletedRecords(inMemory, tempBuffer, file);
+                var deletedCount = await WriteDeletedRecordsAsync(inMemory, tempBuffer, file);
 
                 _bloomFilter = new Hashing.BloomFilter<Hashing.FNV1Hash>(inMemory.Count - deletedCount, _bitsToUseForBloomFilter, new Hashing.FNV1Hash());
                 inMemory.Reset();
@@ -52,20 +51,19 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
                     _bloomFilter.Add(node.Key.Span);
                     index.Add((node.Key, file.Position));
-                    (new Span<byte>(tempBuffer)).WriteAdvance((ushort)node.Key.Length);
-                    await file.WriteAsync(tempBuffer, 0, 2);
-                    (new Span<byte>(tempBuffer)).WriteAdvance(node.Data.Length);
-                    await file.WriteAsync(tempBuffer, 0, 4);
+                    var header = new EntryHeader() { KeySize = (ushort)node.Key.Length, DataSize = node.Data.Length };
+                    tempBuffer.AsSpan().WriteAdvance(header);
+                    await file.WriteAsync(tempBuffer, 0, Unsafe.SizeOf<EntryHeader>());
 
                     await file.WriteAsync(node.Key);
                     await file.WriteAsync(node.Data);
                 }
 
                 // write out bloom filter
-                _bloomFilterIndex = file.Position;
+                _indexTable.BloomFilterIndex = file.Position;
                 await _bloomFilter.SaveAsync(file);
 
-                _indexFilter = file.Position;
+                _indexTable.IndexFilterIndex = file.Position;
                 var i = 0;
                 for (; i < index.Count; i += 10)
                 {
@@ -75,10 +73,10 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                     await file.WriteAsync(tempBuffer, 0, 8);
                     await file.WriteAsync(index[i].key);
                 }
-                var indexSize = file.Position - _indexFilter;
+                _indexTable.IndexFilterLength = file.Position - _indexTable.IndexFilterIndex;
 
-                tempBuffer = new byte[24];
-                ((Span<byte>)tempBuffer).WriteAdvance(_bloomFilterIndex).WriteAdvance(_indexFilter).WriteAdvance(indexSize);
+                tempBuffer = new byte[Unsafe.SizeOf<IndexTable>()];
+                tempBuffer.AsSpan().WriteAdvance(_indexTable);
                 await file.WriteAsync(tempBuffer);
             }
             LoadFile();
@@ -89,23 +87,22 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open);
             var fileInfo = new System.IO.FileInfo(_fileName);
             var fileSize = fileInfo.Length;
-            var indexNames = fileSize - 24;
-            var span = (Span<byte>)new byte[24];
-            using (var indexStream = _memoryMappedFile.CreateViewStream(indexNames, 24))
+            var span = (Span<byte>)new byte[Unsafe.SizeOf<IndexTable>()];
+            var indexNames = fileSize - span.Length;
+            using (var indexStream = _memoryMappedFile.CreateViewStream(indexNames, span.Length))
             {
                 var count = indexStream.Read(span);
                 if (count != span.Length)
                 {
                     throw new NotImplementedException();
                 }
-                span = span.ReadAdvance(out _bloomFilterIndex);
-                span = span.ReadAdvance(out _indexFilter);
-                span = span.ReadAdvance<long>(out var indexSize);
-                _indexView = _memoryMappedFile.CreateViewStream(_indexFilter, indexSize);
+                _indexTable = span.Read<IndexTable>();
             }
         }
 
-        private async Task<int> WriteDeletedRecords(SkipList<TComparer, TAllocator> inMemory, byte[] tempBuffer, System.IO.FileStream file)
+        private MemoryMappedViewStream CreateIndexStream() => _memoryMappedFile.CreateViewStream(_indexTable.IndexFilterIndex, _indexTable.IndexFilterLength);
+
+        private async Task<int> WriteDeletedRecordsAsync(SkipList<TComparer, TAllocator> inMemory, byte[] tempBuffer, System.IO.FileStream file)
         {
             await file.WriteAsync(tempBuffer);
             var deletedCount = 0;
@@ -134,18 +131,16 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             return deletedCount;
         }
 
-        public bool MayContainKey(Span<byte> key) => _bloomFilter.PossiblyContains(key);
-
         internal async Task<SearchResult> FindNodeAsync(Memory<byte> key)
         {
-            if (MayContainKey(key.Span))
+            if (_bloomFilter.PossiblyContains(key.Span))
             {
-                var (index, exactMatch) = await FindBlockToSearch(key);
+                var (index, exactMatch) = await FindBlockToSearchAsync(key);
                 if (exactMatch)
                 {
                     return SearchResult.Found;
                 }
-                var memLocation = await FindBlock(key, index);
+                var memLocation = await FindBlockAsync(key, index);
                 if (memLocation == 0)
                 {
                     return SearchResult.NotFound;
@@ -155,13 +150,13 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             return SearchResult.NotFound;
         }
 
-        private async Task<long> FindBlock(Memory<byte> key, long blockStart)
+        private async Task<long> FindBlockAsync(Memory<byte> key, long blockStart)
         {
-            var lengthsBuffer = new byte[6];
+            var lengthsBuffer = new byte[Unsafe.SizeOf<EntryHeader>()];
             var keyBuffer = ArrayPool<byte>.Shared.Rent(256);
             try
             {
-                using (var stream = _memoryMappedFile.CreateViewStream(blockStart, _bloomFilterIndex - blockStart))
+                using (var stream = _memoryMappedFile.CreateViewStream(blockStart, _indexTable.BloomFilterIndex - blockStart))
                 {
                     while (stream.Position < stream.Length)
                     {
@@ -170,25 +165,25 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                         {
                             throw new NotImplementedException();
                         }
-                        lengthsBuffer.AsSpan().ReadAdvance<ushort>(out var keyLength).ReadAdvance<int>(out var dataLength);
-                        if (keyBuffer.Length < keyLength)
+                        var header = lengthsBuffer.AsSpan().Read<EntryHeader>();
+                        if (keyBuffer.Length < header.KeySize)
                         {
                             ArrayPool<byte>.Shared.Return(keyBuffer);
-                            keyBuffer = ArrayPool<byte>.Shared.Rent(keyLength);
+                            keyBuffer = ArrayPool<byte>.Shared.Rent(header.KeySize);
                         }
-                        count = await stream.ReadAsync(keyBuffer, 0, keyLength);
-                        if (count != keyLength)
+                        count = await stream.ReadAsync(keyBuffer, 0, header.KeySize);
+                        if (count != header.KeySize)
                         {
                             throw new NotImplementedException();
                         }
-                        var compare = _database.Comparer.Compare(key.Span, keyBuffer.AsSpan().Slice(0, keyLength));
+                        var compare = _database.Comparer.Compare(key.Span, keyBuffer.AsSpan().Slice(0, header.KeySize));
                         if (compare == 0)
                         {
                             throw new NotImplementedException("Need to read out the data and slice it");
                         }
                         else if (compare > 0)
                         {
-                            stream.Position += dataLength;
+                            stream.Position += header.DataSize;
                         }
                         else if (compare < 0)
                         {
@@ -204,55 +199,53 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             }
         }
 
-        private async Task<(long index, bool exactMatch)> FindBlockToSearch(Memory<byte> key)
+        private async Task<(long index, bool exactMatch)> FindBlockToSearchAsync(Memory<byte> key)
         {
-            _indexView.Position = 0;
-            var tempBuffer = (Memory<byte>)new byte[10];
-            var tempKeyBuffer = ArrayPool<byte>.Shared.Rent(2048);
-            try
+            using (var indexStream = CreateIndexStream())
             {
-                var previousIndex = 0L;
-                while (_indexView.Position < _indexView.Length)
+                var tempBuffer = (Memory<byte>)new byte[10];
+                var tempKeyBuffer = ArrayPool<byte>.Shared.Rent(2048);
+                try
                 {
-                    var count = await _indexView.ReadAsync(tempBuffer);
-                    if (count != tempBuffer.Length)
+                    var previousIndex = 0L;
+                    while (indexStream.Position < indexStream.Length)
                     {
-                        throw new NotImplementedException();
+                        var count = await indexStream.ReadAsync(tempBuffer);
+                        if (count != tempBuffer.Length)
+                        {
+                            throw new NotImplementedException();
+                        }
+                        tempBuffer.Span.ReadAdvance<ushort>(out var keySize).ReadAdvance<long>(out var recordPosition);
+                        if (tempKeyBuffer.Length < keySize)
+                        {
+                            ArrayPool<byte>.Shared.Return(tempKeyBuffer);
+                            tempKeyBuffer = ArrayPool<byte>.Shared.Rent(keySize);
+                        }
+                        count = await indexStream.ReadAsync(tempKeyBuffer, 0, keySize);
+                        if (count != keySize)
+                        {
+                            throw new NotImplementedException();
+                        }
+                        var compare = _database.Comparer.Compare(key.Span, tempKeyBuffer.AsSpan().Slice(0, keySize));
+                        if (compare == 0)
+                        {
+                            return (recordPosition, true);
+                        }
+                        else if (compare < 0)
+                        {
+                            return (previousIndex, false);
+                        }
+                        previousIndex = recordPosition;
                     }
-                    tempBuffer.Span.ReadAdvance<ushort>(out var keySize).ReadAdvance<long>(out var recordPosition);
-                    if (tempKeyBuffer.Length < keySize)
-                    {
-                        ArrayPool<byte>.Shared.Return(tempKeyBuffer);
-                        tempKeyBuffer = ArrayPool<byte>.Shared.Rent(keySize);
-                    }
-                    count = await _indexView.ReadAsync(tempKeyBuffer, 0, keySize);
-                    if (count != keySize)
-                    {
-                        throw new NotImplementedException();
-                    }
-                    var compare = _database.Comparer.Compare(key.Span, tempKeyBuffer.AsSpan().Slice(0, keySize));
-                    if (compare == 0)
-                    {
-                        return (recordPosition, true);
-                    }
-                    else if (compare < 0)
-                    {
-                        return (previousIndex, false);
-                    }
-                    previousIndex = recordPosition;
+                    return (previousIndex, false);
                 }
-                return (previousIndex, false);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(tempKeyBuffer);
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(tempKeyBuffer);
+                }
             }
         }
 
-        public void Dispose()
-        {
-            _indexView?.Dispose();
-            _memoryMappedFile?.Dispose();
-        }
+        public void Dispose() => _memoryMappedFile?.Dispose();
     }
 }
