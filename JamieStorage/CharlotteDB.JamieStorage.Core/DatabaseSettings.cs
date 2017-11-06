@@ -6,7 +6,7 @@ namespace CharlotteDB.JamieStorage.Core
 {
     public class DatabaseSettings
     {
-        public int MaxInMemoryTableUse { get; set; }
+        public int MaxInMemoryTableUse { get; set; } = 1024 * 1024 * 5;
         public int BufferAllocationSize { get; set; }
     }
 }

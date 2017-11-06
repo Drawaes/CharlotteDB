@@ -9,20 +9,20 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
     public unsafe class MappedFileMemory : OwnedMemory<byte>
     {
-        private void* _ptr;
+        private byte* _ptr;
         private int _length;
-        private bool _disposed;
-        private MemoryMappedFile _mappedFile;
+        private MemoryMappedViewAccessor _memoryFile;
         private int _retainedCounter;
 
-        public MappedFileMemory(void* ptr, int length, MemoryMappedFile memoryMappedFile)
+        public MappedFileMemory(long offset, int length, MemoryMappedFile memoryMappedFile)
         {
-            _mappedFile = memoryMappedFile;
-            _ptr = ptr;
+            _memoryFile = memoryMappedFile.CreateViewAccessor(0, length);
+            _memoryFile.SafeMemoryMappedViewHandle.AcquirePointer(ref _ptr);
+            
             _length = length;
         }
 
-        public override bool IsDisposed => _mappedFile.SafeMemoryMappedFileHandle.IsInvalid || _disposed;
+        public override bool IsDisposed => _memoryFile.SafeMemoryMappedViewHandle?.IsInvalid != false;
 
         public override Span<byte> Span => new Span<byte>(_ptr, _length);
 
@@ -36,7 +36,11 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         public override void Retain() => Interlocked.Increment(ref _retainedCounter);
 
-        protected override void Dispose(bool disposing) => _disposed = true;
+        protected override void Dispose(bool disposing)
+        {
+            _memoryFile.SafeMemoryMappedViewHandle.ReleasePointer();
+            _memoryFile?.Dispose();
+        }
 
         protected override bool TryGetArray(out ArraySegment<byte> arraySegment)
         {

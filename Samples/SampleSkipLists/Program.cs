@@ -40,7 +40,7 @@ namespace SampleSkipLists
                     var bytes = Encoding.UTF8.GetBytes(l);
                     var span = new Memory<byte>(bytes);
 
-                    if (rnd.NextDouble() < 0.05)
+                    if (i != 0 && rnd.NextDouble() < 0.05)
                     {
                         await database.TryRemoveAsync(span);
                     }
@@ -52,7 +52,7 @@ namespace SampleSkipLists
 
                 var b = Encoding.UTF8.GetBytes(list[0]);
                 var mem = new Memory<byte>(b);
-                var resultType =  database.TryGetDataAsync(mem);
+                var (found, data) =  database.TryGetData(mem);
             }
             _event.Set();
         }

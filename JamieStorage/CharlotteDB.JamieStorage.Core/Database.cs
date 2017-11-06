@@ -31,13 +31,13 @@ namespace CharlotteDB.JamieStorage.Core
             _currentSkipList = new SkipList<TComparer>(comparer, allocator);
         }
 
-        public Database(string folder, TComparer comparer, Allocator allocator) : this(folder, new DatabaseSettings() { MaxInMemoryTableUse = 1024 * 1024 * 5 }, comparer, allocator)
+        public Database(string folder, TComparer comparer, Allocator allocator) : this(folder, new DatabaseSettings(), comparer, allocator)
         {
         }
 
         public TComparer Comparer => _comparer;
 
-        public async Task<(bool found, Memory<byte> data)> TryGetDataAsync(Memory<byte> key)
+        public (bool found, Memory<byte> data) TryGetData(Memory<byte> key)
         {
             var result = _currentSkipList.TryFind(key.Span, out var data);
             switch (result)
@@ -64,7 +64,7 @@ namespace CharlotteDB.JamieStorage.Core
 
             for (var i = _storageTables.Count - 1; i >= 0; i--)
             {
-                var outputResult = await _storageTables[i].TryGetDataAsync(key);
+                var outputResult = _storageTables[i].TryGetData(key);
                 if (outputResult.result == SearchResult.Found)
                 {
                     return (true, outputResult.data);
@@ -100,12 +100,12 @@ namespace CharlotteDB.JamieStorage.Core
             return Task.CompletedTask;
         }
 
-        internal async Task<SearchResult> FindNodeAsync(Memory<byte> key)
+        internal SearchResult FindNode(Memory<byte> key)
         {
             for (var i = _storageTables.Count - 1; i >= 0; i--)
             {
                 var st = _storageTables[i];
-                var searchResult = await st.FindNodeAsync(key);
+                var searchResult = st.FindNode(key);
                 if (searchResult == SearchResult.Deleted || searchResult == SearchResult.Found)
                 {
                     return searchResult;

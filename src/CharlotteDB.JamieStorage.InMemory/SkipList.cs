@@ -219,7 +219,7 @@ namespace CharlotteDB.JamieStorage.InMemory
                     l--;
                 }
             }
-            data = null;
+            data = default;
             return SearchResult.NotFound;
         }
 

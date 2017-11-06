@@ -18,6 +18,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private Database<TComparer> _database;
         private IndexTable _indexTable;
         private MemoryMappedFile _memoryMappedFile;
+        private MappedFileMemory _mappedFile;
 
         public StorageFile(string fileName, int bitsToUseForBloomFilter, Database<TComparer> database)
         {
@@ -32,11 +33,12 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
             using (var file = System.IO.File.Open(_fileName, System.IO.FileMode.CreateNew, System.IO.FileAccess.Write, System.IO.FileShare.None))
             {
-                var deletedCount = await WriteDeletedRecordsAsync(inMemory, tempBuffer, file);
+                var deletedCount = await WriteDeletedRecordsAsync(inMemory, file);
 
                 _bloomFilter = new Hashing.BloomFilter<Hashing.FNV1Hash>(inMemory.Count - deletedCount, _bitsToUseForBloomFilter, new Hashing.FNV1Hash());
                 inMemory.Reset();
-                var index = new List<(Memory<byte> key, long fileIndex)>();
+                var index = new List<(Memory<byte> key, int fileIndex, int indexEnd)>();
+                _indexTable.BlockRegionIndex = (int)file.Position;
                 while (inMemory.Next())
                 {
                     var node = inMemory.CurrentNode;
@@ -46,30 +48,24 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                     }
 
                     _bloomFilter.Add(node.Key.Span);
-                    index.Add((node.Key, file.Position));
+                    var startIndex = (int)file.Position;
                     var header = new EntryHeader() { KeySize = (ushort)node.Key.Length, DataSize = node.Data.Length };
                     tempBuffer.AsSpan().WriteAdvance(header);
                     await file.WriteAsync(tempBuffer, 0, Unsafe.SizeOf<EntryHeader>());
 
                     await file.WriteAsync(node.Key);
                     await file.WriteAsync(node.Data);
-                }
 
+                    index.Add((node.Key, startIndex, (int)file.Position));
+
+                }
+                _indexTable.BlockRegionLength = (int)(file.Position - _indexTable.BlockRegionIndex);
                 // write out bloom filter
-                _indexTable.BloomFilterIndex = file.Position;
+                _indexTable.BloomFilterIndex = (int)file.Position;
                 await _bloomFilter.SaveAsync(file);
+                _indexTable.BloomFilterLength = (int)(file.Position - _indexTable.BloomFilterIndex);
 
-                _indexTable.IndexFilterIndex = file.Position;
-                var i = 0;
-                for (; i < index.Count; i += 10)
-                {
-                    ((Span<byte>)tempBuffer).WriteAdvance((ushort)index[i].key.Length);
-                    await file.WriteAsync(tempBuffer, 0, 2);
-                    tempBuffer.AsSpan().WriteAdvance(index[i].fileIndex);
-                    await file.WriteAsync(tempBuffer, 0, 8);
-                    await file.WriteAsync(index[i].key);
-                }
-                _indexTable.IndexFilterLength = file.Position - _indexTable.IndexFilterIndex;
+                await WriteIndex(file, index);
 
                 tempBuffer = new byte[Unsafe.SizeOf<IndexTable>()];
                 tempBuffer.AsSpan().WriteAdvance(_indexTable);
@@ -78,17 +74,74 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             LoadFile();
         }
 
-        internal async Task<(SearchResult result, Memory<byte> data)> TryGetDataAsync(Memory<byte> key)
+        private async Task WriteIndex(System.IO.FileStream file, List<(Memory<byte> key, int fileIndex, int indexEnd)> index)
+        {
+            _indexTable.IndexFilterIndex = (int)file.Position;
+            var finalItemAdded = false;
+
+            var tempBuffer = new byte[Unsafe.SizeOf<IndexRecord>()];
+            var newIndex = new List<(Memory<byte> key, IndexRecord)>();
+            for (var i = 0; i < index.Count; i += 10)
+            {
+                var indexRecord = new IndexRecord()
+                {
+                    KeySize = (ushort)index[i].key.Length,
+                    BlockStart = index[i].fileIndex,
+                };
+                newIndex.Add((index[i].key, indexRecord));
+                if (i == index.Count - 1)
+                {
+                    finalItemAdded = true;
+                }
+            }
+            if (!finalItemAdded)
+            {
+                newIndex.Add((index[index.Count - 1].key
+                    , new IndexRecord()
+                    {
+                        BlockStart = index[index.Count - 1].fileIndex,
+                        KeySize = (ushort)index[index.Count - 1].key.Length
+                    }));
+            }
+
+            for (var i = 0; i < newIndex.Count; i++)
+            {
+                var currentIndex = newIndex[i].Item2;
+                if (i == (newIndex.Count - 1))
+                {
+                    currentIndex.BlockEnd = _indexTable.BlockRegionIndex + _indexTable.BlockRegionLength;
+                }
+                else
+                {
+                    currentIndex.BlockEnd = newIndex[i + 1].Item2.BlockStart;
+                }
+                tempBuffer.AsSpan().WriteAdvance(currentIndex);
+                await file.WriteAsync(tempBuffer);
+                await file.WriteAsync(newIndex[i].key);
+            }
+            _indexTable.IndexFilterLength = (int)(file.Position - _indexTable.IndexFilterIndex);
+        }
+
+        internal (SearchResult result, Memory<byte> data) TryGetData(Memory<byte> key)
         {
             if (!_bloomFilter.PossiblyContains(key.Span))
             {
                 return (SearchResult.NotFound, default);
             }
-            var (index, exactMatch) = await FindBlockToSearchAsync(key);
+            var (index, end, exactMatch) = FindBlockToSearch(key);
             if (exactMatch)
             {
                 throw new NotImplementedException();
                 //return (SearchResult.Found, );
+            }
+            if(index == -1)
+            {
+                return (SearchResult.NotFound, default);
+            }
+            var rowIndex = FindRow(key, index, end);
+            if(rowIndex == -1)
+            {
+                return (SearchResult.NotFound, default);
             }
             throw new NotImplementedException();
         }
@@ -98,163 +151,110 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open);
             var fileInfo = new System.IO.FileInfo(_fileName);
             var fileSize = fileInfo.Length;
-            var span = (Span<byte>)new byte[Unsafe.SizeOf<IndexTable>()];
-            var indexNames = fileSize - span.Length;
-            using (var indexStream = _memoryMappedFile.CreateViewStream(indexNames, span.Length))
-            {
-                var count = indexStream.Read(span);
-                if (count != span.Length)
-                {
-                    throw new NotImplementedException();
-                }
-                _indexTable = span.Read<IndexTable>();
-            }
+
+            _mappedFile = new MappedFileMemory(0, (int)fileSize, _memoryMappedFile);
+            _indexTable = _mappedFile.Memory.Span.Slice(_mappedFile.Length - Unsafe.SizeOf<IndexTable>()).Read<IndexTable>();
+            
         }
 
-        private MemoryMappedViewStream CreateIndexStream() => _memoryMappedFile.CreateViewStream(_indexTable.IndexFilterIndex, _indexTable.IndexFilterLength);
-
-        private async Task<int> WriteDeletedRecordsAsync(SkipList<TComparer> inMemory, byte[] tempBuffer, System.IO.FileStream file)
+        private async Task<int> WriteDeletedRecordsAsync(SkipList<TComparer> inMemory, System.IO.FileStream file)
         {
-            await file.WriteAsync(tempBuffer);
+            _indexTable.DeletedRegionIndex = 0;
             var deletedCount = 0;
+            var tempBuffer = new byte[2];
             while (inMemory.Next())
             {
                 var node = inMemory.CurrentNode;
                 switch (node.State)
                 {
                     case ItemState.Deleted:
-                        var searchResult = await _database.FindNodeAsync(node.Key);
+                        var searchResult = _database.FindNode(node.Key);
                         if (searchResult == SearchResult.Found)
                         {
-                            ((Span<byte>)tempBuffer).WriteAdvance(node.Key.Length);
-                            await file.WriteAsync(new Memory<byte>(tempBuffer, 0, 4));
+                            ((Span<byte>)tempBuffer).WriteAdvance((ushort)node.Key.Length);
+                            await file.WriteAsync(new Memory<byte>(tempBuffer));
                             await file.WriteAsync(node.Key);
                         }
                         deletedCount++;
                         break;
                 }
             }
-            var currentLocation = file.Position;
-            file.Position = 0;
-            ((Span<byte>)tempBuffer).WriteAdvance(currentLocation);
-            await file.WriteAsync(tempBuffer);
-            file.Position = currentLocation;
+            _indexTable.DeletedRegionLength = (int)(file.Position - _indexTable.DeletedRegionIndex);
+
             return deletedCount;
         }
 
-        internal async Task<SearchResult> FindNodeAsync(Memory<byte> key)
+        internal SearchResult FindNode(Memory<byte> key)
         {
             if (!_bloomFilter.PossiblyContains(key.Span))
             {
                 return SearchResult.NotFound;
             }
-            var (index, exactMatch) = await FindBlockToSearchAsync(key);
+
+            var (start, end, exactMatch) = FindBlockToSearch(key);
             if (exactMatch)
             {
                 return SearchResult.Found;
             }
-            var memLocation = await FindBlockAsync(key, index);
-            if (memLocation == 0)
+
+            var memLocation = FindRow(key, start, end);
+            if (memLocation == -1)
             {
                 return SearchResult.NotFound;
             }
             return SearchResult.Found;
         }
 
-        private async Task<long> FindBlockAsync(Memory<byte> key, long blockStart)
+        private int FindRow(Memory<byte> key, int blockStart, int blockEnd)
         {
-            var lengthsBuffer = new byte[Unsafe.SizeOf<EntryHeader>()];
-            var keyBuffer = ArrayPool<byte>.Shared.Rent(256);
-            try
+            var endOfBlock = blockEnd - blockStart;
+            var blockMemory = _mappedFile.Memory.Span.Slice(blockStart, endOfBlock);
+            while (blockMemory.Length > 0)
             {
-                using (var stream = _memoryMappedFile.CreateViewStream(blockStart, _indexTable.BloomFilterIndex - blockStart))
+                blockMemory = blockMemory.ReadAdvance<EntryHeader>(out var header);
+                var key2 = blockMemory.Slice(0, header.KeySize);
+                var compare = _database.Comparer.Compare(key.Span, key2);
+                if (compare == 0)
                 {
-                    while (stream.Position < stream.Length)
-                    {
-                        var count = await stream.ReadAsync(lengthsBuffer);
-                        if (count != lengthsBuffer.Length)
-                        {
-                            throw new NotImplementedException();
-                        }
-                        var header = lengthsBuffer.AsSpan().Read<EntryHeader>();
-                        if (keyBuffer.Length < header.KeySize)
-                        {
-                            ArrayPool<byte>.Shared.Return(keyBuffer);
-                            keyBuffer = ArrayPool<byte>.Shared.Rent(header.KeySize);
-                        }
-                        count = await stream.ReadAsync(keyBuffer, 0, header.KeySize);
-                        if (count != header.KeySize)
-                        {
-                            throw new NotImplementedException();
-                        }
-                        var compare = _database.Comparer.Compare(key.Span, keyBuffer.AsSpan().Slice(0, header.KeySize));
-                        if (compare == 0)
-                        {
-                            throw new NotImplementedException("Need to read out the data and slice it");
-                        }
-                        else if (compare > 0)
-                        {
-                            stream.Position += header.DataSize;
-                        }
-                        else if (compare < 0)
-                        {
-                            return default;
-                        }
-                    }
+                    throw new NotImplementedException("Need to read out the data and slice it");
                 }
-                return default;
+                else if (compare > 0)
+                {
+                    blockMemory = blockMemory.Slice(header.KeySize + header.DataSize);
+                }
+                else if (compare < 0)
+                {
+                    return -1;
+                }
             }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(keyBuffer);
-            }
+
+            return -1;
         }
 
-        private async Task<(long index, bool exactMatch)> FindBlockToSearchAsync(Memory<byte> key)
+        private (int start, int end, bool exactMatch) FindBlockToSearch(Memory<byte> key)
         {
-            using (var indexStream = CreateIndexStream())
+            var indexMem = _mappedFile.Memory.Span.Slice(_indexTable.IndexFilterIndex, _indexTable.IndexFilterLength);
+
+            var previousStart = -1;
+            var previousEnd = -1;
+            while (indexMem.Length > 0)
             {
-                var tempBuffer = (Memory<byte>)new byte[10];
-                var tempKeyBuffer = ArrayPool<byte>.Shared.Rent(2048);
-                try
+                indexMem = indexMem.ReadAdvance<IndexRecord>(out var record);
+
+                var compare = _database.Comparer.Compare(key.Span, indexMem.Slice(0, record.KeySize));
+                if (compare == 0)
                 {
-                    var previousIndex = 0L;
-                    while (indexStream.Position < indexStream.Length)
-                    {
-                        var count = await indexStream.ReadAsync(tempBuffer);
-                        if (count != tempBuffer.Length)
-                        {
-                            throw new NotImplementedException();
-                        }
-                        tempBuffer.Span.ReadAdvance<ushort>(out var keySize).ReadAdvance<long>(out var recordPosition);
-                        if (tempKeyBuffer.Length < keySize)
-                        {
-                            ArrayPool<byte>.Shared.Return(tempKeyBuffer);
-                            tempKeyBuffer = ArrayPool<byte>.Shared.Rent(keySize);
-                        }
-                        count = await indexStream.ReadAsync(tempKeyBuffer, 0, keySize);
-                        if (count != keySize)
-                        {
-                            throw new NotImplementedException();
-                        }
-                        var compare = _database.Comparer.Compare(key.Span, tempKeyBuffer.AsSpan().Slice(0, keySize));
-                        if (compare == 0)
-                        {
-                            return (recordPosition, true);
-                        }
-                        else if (compare < 0)
-                        {
-                            return (previousIndex, false);
-                        }
-                        previousIndex = recordPosition;
-                    }
-                    return (previousIndex, false);
+                    return (record.BlockStart, record.BlockEnd, true);
                 }
-                finally
+                else if (compare < 0)
                 {
-                    ArrayPool<byte>.Shared.Return(tempKeyBuffer);
+                    return (previousStart, previousEnd, false);
                 }
+                indexMem = indexMem.Slice(record.KeySize);
+                previousStart = record.BlockStart;
+                previousEnd = record.BlockEnd;
             }
+            return (previousStart, previousEnd, false);
         }
 
         public void Dispose() => _memoryMappedFile?.Dispose();
