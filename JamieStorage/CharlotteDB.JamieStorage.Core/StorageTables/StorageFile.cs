@@ -13,7 +13,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
     public class StorageFile<TComparer> : IDisposable where TComparer : IKeyComparer
     {
         private string _fileName;
-        private Hashing.BloomFilter<Hashing.FNV1Hash> _bloomFilter;
+        private BloomFilter<FNV1Hash> _bloomFilter;
         private Database<TComparer> _database;
         private IndexTable _indexTable;
         private MemoryMappedFile _memoryMappedFile;
@@ -43,8 +43,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             var (index, end, exactMatch) = FindBlockToSearch(key);
             if (exactMatch)
             {
-                throw new NotImplementedException();
-                //return (SearchResult.Found, );
+                ReturnFoundData(index);
             }
             if (index == -1)
             {
@@ -55,7 +54,14 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             {
                 return (SearchResult.NotFound, default);
             }
-            throw new NotImplementedException();
+            return ReturnFoundData(rowIndex);
+        }
+
+        private (SearchResult result, Memory<byte> data) ReturnFoundData(int index)
+        {
+            var m = _mappedFile.Memory.Slice(index);
+            m.Span.ReadAdvance<EntryHeader>(out var header);
+            return (SearchResult.Found, m.Slice(header.KeySize + Unsafe.SizeOf<EntryHeader>(), header.DataSize));
         }
 
         private void LoadFile()
@@ -66,7 +72,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
             _mappedFile = new MappedFileMemory(0, (int)fileSize, _memoryMappedFile);
             _indexTable = _mappedFile.Memory.Span.Slice(_mappedFile.Length - Unsafe.SizeOf<IndexTable>()).Read<IndexTable>();
-            _bloomFilter = new BloomFilter<FNV1Hash>(_mappedFile.Memory.Slice(_indexTable.BloomFilterIndex, _indexTable.BloomFilterLength).Span, new FNV1Hash());
+            _bloomFilter = new BloomFilter<FNV1Hash>(_mappedFile.Memory.Slice(_indexTable.BloomFilterIndex, _indexTable.BloomFilterLength).Span, _database.Hasher);
         }
 
         internal SearchResult FindNode(Memory<byte> key)
@@ -92,16 +98,17 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         private int FindRow(Memory<byte> key, int blockStart, int blockEnd)
         {
-            var endOfBlock = blockEnd - blockStart;
-            var blockMemory = _mappedFile.Memory.Span.Slice(blockStart, endOfBlock);
+            var sizeOfBlock = blockEnd - blockStart;
+            var blockMemory = _mappedFile.Memory.Span.Slice(blockStart, sizeOfBlock);
             while (blockMemory.Length > 0)
             {
+                var rowStart = sizeOfBlock - blockMemory.Length;
                 blockMemory = blockMemory.ReadAdvance<EntryHeader>(out var header);
                 var key2 = blockMemory.Slice(0, header.KeySize);
                 var compare = _database.Comparer.Compare(key.Span, key2);
                 if (compare == 0)
                 {
-                    throw new NotImplementedException("Need to read out the data and slice it");
+                    return blockStart + rowStart;
                 }
                 else if (compare > 0)
                 {

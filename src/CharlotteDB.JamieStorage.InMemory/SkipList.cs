@@ -36,7 +36,8 @@ namespace CharlotteDB.JamieStorage.InMemory
             _bufferMask = (uint)(1 << _bufferShift) - 1;
             _keyBuffers.Add(_allocator.AllocateNormalBuffer());
             _dataBuffers.Add(_allocator.AllocateNormalBuffer());
-
+            _currentKeyPointer = 1;
+            _currentDataPointer = 1;
             _random = new Random(seed);
             _maxHeight = byte.MaxValue;
             _headNode = new uint[_maxHeight];
@@ -132,17 +133,19 @@ namespace CharlotteDB.JamieStorage.InMemory
             var dataStore = StoreData(data);
             var pointerSpan = AllocateNode((byte)height, key, dataStore, state, out var pointerStart);
             var currentPointerList = (Span<uint>)_headNode;
-            for (var level = _height; level >= 0;)
+            for (var level = (_height - 1); level >= 0;)
             {
                 var nextPointer = currentPointerList[level];
                 if (nextPointer == 0)
                 {
-                    // End of the chain we need to drop down
+
                     if (level < height)
                     {
                         currentPointerList[level] = pointerStart;
                         pointerSpan[level] = 0;
                     }
+
+                    // End of the chain we need to drop down
                     level--;
                     continue;
                 }
@@ -159,7 +162,6 @@ namespace CharlotteDB.JamieStorage.InMemory
                 {
                     // bigger than the next node lets step into the next node and not change level
                     currentPointerList = nextNode.PointerTable;
-                    continue;
                 }
                 else
                 {
@@ -172,7 +174,6 @@ namespace CharlotteDB.JamieStorage.InMemory
 
                     // drop a level
                     level--;
-                    continue;
                 }
             }
             _count++;
@@ -204,7 +205,7 @@ namespace CharlotteDB.JamieStorage.InMemory
                 {
                     if (nodeAtPointer.State == 0)
                     {
-                        data = GetDataFromPointer(nodeAtPointer.PointerTable[l]);
+                        data = GetDataFromPointer(nodeAtPointer.DataPointer);
                         return SearchResult.Found;
                     }
                     else

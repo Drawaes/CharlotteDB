@@ -18,7 +18,7 @@ namespace CharlotteDB.Core.Keys
             }
 
             if (key1.Length == key2.Length) return 0;
-            if (key1.Length == max) return 1;
+            if (key2.Length == max) return 1;
 
             return -1;
         }

@@ -53,7 +53,6 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private async Task WriteIndexAsync()
         {
             _indexTable.IndexFilterIndex = (int)_stream.Position;
-            var finalItemAdded = false;
 
             var tempBuffer = new byte[Unsafe.SizeOf<IndexRecord>()];
             for (var i = 0; i < _index.Count; i++)
@@ -84,7 +83,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         private async Task WriteBlockDataAsync()
         {
-            _bloomFilter = new BloomFilter<FNV1Hash>(_inMemory.Count - _deletedCount, _bitsToUseForBloomFilter, new FNV1Hash());
+            _bloomFilter = BloomFilter.Create(_inMemory.Count - _deletedCount, _bitsToUseForBloomFilter, 3, _database.Hasher);
             _inMemory.Reset();
             _indexTable.BlockRegionIndex = (int)_stream.Position;
             var nodeCount = 0;

@@ -15,7 +15,7 @@ namespace CharlotteDB.JamieStorage.Hashing.Facts
             var list = new byte[count][];
             var rnd = new Random();
 
-            var bloom = new BloomFilter<FNVHash>(count, 4, new FNVHash());
+            var bloom = BloomFilter.Create(count, 4, 3, new FNVHash());
 
             for (var i = 0; i < list.Length; i++)
             {
@@ -37,8 +37,8 @@ namespace CharlotteDB.JamieStorage.Hashing.Facts
         [Fact]
         public void TestDictionaryFNV1Hash()
         {
-            var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
-            var bloom = new BloomFilter<FNV1Hash>(list.Length, 4, new FNV1Hash());
+            var list = File.ReadAllLines("C:\\code\\words.txt");
+            var bloom = BloomFilter.Create(list.Length, 4, 3, new FNV1Hash());
 
             for (var i = 0; i < list.Length; i++)
             {
@@ -56,8 +56,8 @@ namespace CharlotteDB.JamieStorage.Hashing.Facts
         [Fact]
         public void TestDictionaryFNV1HashSaveAndLoad()
         {
-            var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
-            var bloom = new BloomFilter<FNV1Hash>(list.Length, 4, new FNV1Hash());
+            var list = File.ReadAllLines("C:\\code\\words.txt");
+            var bloom = BloomFilter.Create(list.Length, 4, 3, new FNV1Hash());
 
             for (var i = 0; i < list.Length; i++)
             {

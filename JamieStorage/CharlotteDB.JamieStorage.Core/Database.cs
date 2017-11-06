@@ -5,6 +5,7 @@ using CharlotteDB.Core;
 using CharlotteDB.Core.Allocation;
 using CharlotteDB.Core.Keys;
 using CharlotteDB.JamieStorage.Core.StorageTables;
+using CharlotteDB.JamieStorage.Hashing;
 using CharlotteDB.JamieStorage.InMemory;
 
 namespace CharlotteDB.JamieStorage.Core
@@ -15,6 +16,7 @@ namespace CharlotteDB.JamieStorage.Core
         private SkipList<TComparer> _currentSkipList;
         private SkipList<TComparer> _oldSkipList;
         private List<StorageFile<TComparer>> _storageTables = new List<StorageFile<TComparer>>();
+        private FNV1Hash _hasher;
         private DatabaseSettings _settings;
         private TComparer _comparer;
         private Allocator _allocator;
@@ -22,6 +24,7 @@ namespace CharlotteDB.JamieStorage.Core
 
         public Database(string folder, DatabaseSettings settings, TComparer comparer, Allocator allocator)
         {
+            _hasher = new FNV1Hash();
             _allocator = allocator;
             _comparer = comparer;
             _folder = folder;
@@ -34,6 +37,7 @@ namespace CharlotteDB.JamieStorage.Core
         }
 
         public TComparer Comparer => _comparer;
+        internal FNV1Hash Hasher => _hasher;
 
         public (bool found, Memory<byte> data) TryGetData(Memory<byte> key)
         {
