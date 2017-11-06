@@ -17,8 +17,19 @@ namespace CharlotteDB.JamieStorage.Hashing
         private ThreadLocal<ulong[]> _hashWorkingSet;
 
         public BloomFilter(int estimatedElements, int bitsPerElement, THash hasher)
-            : this(estimatedElements * bitsPerElement, hasher, (int)Math.Round(Math.Log(2.0) * bitsPerElement / estimatedElements))
+            : this(estimatedElements * bitsPerElement, hasher, Math.Max(1, (int)Math.Round(Math.Log(2.0) * bitsPerElement / estimatedElements)))
         {
+        }
+
+        public BloomFilter(Span<byte> storage, THash hasher)
+        {
+            _hasher = hasher;
+            storage = storage.ReadAdvance(out _numberOfHashes);
+            storage = storage.ReadAdvance<long>(out var count);
+            _count.Value = count;
+            _backingArray = storage.NonPortableCast<byte, int>().ToArray();
+            _hashWorkingSet = new ThreadLocal<ulong[]>(() => new ulong[_numberOfHashes]);
+            _bitCount = _backingArray.Length * sizeof(int) * 8;
         }
 
         public BloomFilter(int bitCount, THash hasher, int numberOfHashes)
@@ -106,7 +117,6 @@ namespace CharlotteDB.JamieStorage.Hashing
         {
             var backingArray = new byte[OutputSize];
             var span = new Span<byte>(backingArray);
-            span = span.WriteAdvance(OutputSize - sizeof(int));
             span = span.WriteAdvance(_numberOfHashes);
             span = span.WriteAdvance(Count);
             _backingArray.AsSpan().NonPortableCast<int, byte>().CopyTo(span);
@@ -125,6 +135,6 @@ namespace CharlotteDB.JamieStorage.Hashing
             }
         }
 
-        public int OutputSize => (_bitCount / 8) + sizeof(int) * 2 + sizeof(long);
+        public int OutputSize => (_bitCount / 8) + sizeof(int) + sizeof(long);
     }
 }

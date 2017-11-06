@@ -1,9 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
+using System.Runtime.InteropServices;
 
 namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     internal struct EntryHeader
     {
         public ushort KeySize;

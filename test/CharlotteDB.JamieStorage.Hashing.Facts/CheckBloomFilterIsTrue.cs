@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Xunit;
 
 namespace CharlotteDB.JamieStorage.Hashing.Facts
@@ -31,6 +32,51 @@ namespace CharlotteDB.JamieStorage.Hashing.Facts
             }
 
             var expectedError = bloom.FalsePositiveErrorRate;
+        }
+
+        [Fact]
+        public void TestDictionaryFNV1Hash()
+        {
+            var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
+            var bloom = new BloomFilter<FNV1Hash>(list.Length, 4, new FNV1Hash());
+
+            for (var i = 0; i < list.Length; i++)
+            {
+                var item = System.Text.Encoding.UTF8.GetBytes(list[i]);
+                bloom.Add(item);
+            }
+
+            for (var i = 0; i < list.Length; i++)
+            {
+                var item = System.Text.Encoding.UTF8.GetBytes(list[i]);
+                Assert.True(bloom.PossiblyContains(item));
+            }
+        }
+
+        [Fact]
+        public void TestDictionaryFNV1HashSaveAndLoad()
+        {
+            var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
+            var bloom = new BloomFilter<FNV1Hash>(list.Length, 4, new FNV1Hash());
+
+            for (var i = 0; i < list.Length; i++)
+            {
+                var item = System.Text.Encoding.UTF8.GetBytes(list[i]);
+                bloom.Add(item);
+            }
+
+            using (var mem = new MemoryStream())
+            {
+                bloom.SaveAsync(mem).Wait();
+                var storage = mem.ToArray();
+                bloom = new BloomFilter<FNV1Hash>(storage, new FNV1Hash());
+            }
+
+            for (var i = 0; i < list.Length; i++)
+            {
+                var item = System.Text.Encoding.UTF8.GetBytes(list[i]);
+                Assert.True(bloom.PossiblyContains(item));
+            }
         }
     }
 }

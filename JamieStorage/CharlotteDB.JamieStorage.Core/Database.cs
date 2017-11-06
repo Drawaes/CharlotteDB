@@ -1,11 +1,10 @@
 using System;
-using System.Buffers;
 using System.Collections.Generic;
-using System.Threading;
 using System.Threading.Tasks;
 using CharlotteDB.Core;
 using CharlotteDB.Core.Allocation;
 using CharlotteDB.Core.Keys;
+using CharlotteDB.JamieStorage.Core.StorageTables;
 using CharlotteDB.JamieStorage.InMemory;
 
 namespace CharlotteDB.JamieStorage.Core
@@ -15,8 +14,7 @@ namespace CharlotteDB.JamieStorage.Core
         private string _folder;
         private SkipList<TComparer> _currentSkipList;
         private SkipList<TComparer> _oldSkipList;
-        private SemaphoreSlim _writeSemaphore = new SemaphoreSlim(1);
-        private List<StorageTables.StorageFile<TComparer>> _storageTables = new List<StorageTables.StorageFile<TComparer>>();
+        private List<StorageFile<TComparer>> _storageTables = new List<StorageFile<TComparer>>();
         private DatabaseSettings _settings;
         private TComparer _comparer;
         private Allocator _allocator;
@@ -119,8 +117,8 @@ namespace CharlotteDB.JamieStorage.Core
         {
             _oldSkipList = _currentSkipList;
             _currentSkipList = new SkipList<TComparer>(_comparer, _allocator);
-            var storage = new StorageTables.StorageFile<TComparer>(NextFileTableName(), 5, this);
-            await storage.WriteInMemoryTableAsync(_oldSkipList);
+            var storage = new StorageFile<TComparer>(NextFileTableName(), this);
+            await storage.WriteInMemoryTableAsync(_oldSkipList, 4);
             _storageTables.Add(storage);
             _oldSkipList = null;
         }
