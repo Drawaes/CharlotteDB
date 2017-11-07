@@ -31,7 +31,7 @@ namespace SampleSkipLists
         private static async Task TestDB()
         {
             var outputList = new List<(bool deleted, Memory<byte> bytes)>();
-            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(1024 * 1024)))
+            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(65536)))
             {
                 var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
                 var rnd = new Random();
@@ -44,7 +44,7 @@ namespace SampleSkipLists
 
                     if (i != 0 && rnd.NextDouble() < 0.05)
                     {
-                        await database.TryRemoveAsync(span);
+                        await database.PutAsync(span, span);
                         outputList.Add((true, span));
                     }
                     else
@@ -54,16 +54,27 @@ namespace SampleSkipLists
                     }
                 }
 
+                for(var i = 0; i < outputList.Count;i++)
+                {
+                    var (d, b) = outputList[i];
+                    if (d == true)
+                    {
+                        await database.TryRemoveAsync(b);
+                    }
+                }
+
+                await database.FlushToDisk();
+
                 for (var i = 0; i < outputList.Count; i++)
                 {
                     var (deleted, bytes) = outputList[i];
 
                     var (found, data) = database.TryGetData(bytes);
-                    if (!found)
+                    if ((!deleted && !found) || (deleted && found))
                     {
                         throw new InvalidOperationException();
                     }
-                    if (!data.Span.SequenceEqual(bytes.Span))
+                    if ((!deleted) && !data.Span.SequenceEqual(bytes.Span))
                     {
                         throw new InvalidOperationException();
                     }
@@ -92,6 +103,7 @@ namespace SampleSkipLists
                 skipList.Insert(span, span);
                 //sortedDict.Add(l, l);
             }
+            Console.Write($"time = {sw.ElapsedMilliseconds}");
 
             var sb = new StringBuilder();
             while (skipList.Next())
@@ -116,7 +128,7 @@ namespace SampleSkipLists
             }
 
             var totalCount = skipList.Count;
-            Console.Write($"time = {sw.ElapsedMilliseconds}");
+            
         }
     }
 }

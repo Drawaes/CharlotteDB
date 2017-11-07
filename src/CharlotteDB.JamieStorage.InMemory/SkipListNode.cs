@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
 using CharlotteDB.Core;
 
@@ -8,26 +9,24 @@ namespace CharlotteDB.JamieStorage.InMemory
     internal ref struct SkipListNode
     {
         private Memory<byte> _bufferStart;
-        private ushort _height;
-        private byte _state;
-        private ushort _keyLength;
-        private long _dataPointer;
+        private SkipNodeHeader _header;
 
         public SkipListNode(Memory<byte> buffer)
         {
             _bufferStart = buffer;
-            var tempSpan = buffer.Span.ReadAdvance(out _height);
-            tempSpan = tempSpan.ReadAdvance(out _keyLength);
-            _dataPointer = tempSpan.Read<long>();
-            _state = (byte)(_dataPointer & 0xFF);
-            _dataPointer = _dataPointer >> 8;
+            _header = buffer.Span.Read<SkipNodeHeader>();
         }
 
-        public Span<uint> PointerTable => _bufferStart.Span.Slice(12).NonPortableCast<byte, uint>().Slice(0, _height);
-        public Memory<byte> Key => _bufferStart.Slice(12 + (_height << 2), _keyLength);
-        public long DataPointer => _dataPointer;
-        public byte State => _state;
+        public Span<int> PointerTable => _bufferStart.Span.Slice(Unsafe.SizeOf<SkipNodeHeader>()).NonPortableCast<byte, int>().Slice(0, _header.Height);
+        public Memory<byte> Key => _bufferStart.Slice(Unsafe.SizeOf<SkipNodeHeader>() + (_header.Height << 2), _header.KeyLength);
+        public int DataPointer => _header.DataPointer;
+        public ItemState State => _header.State;
 
-        internal void Update(byte state, long dataPointer) => _bufferStart.Slice(sizeof(uint)).Span.WriteAdvance(((dataPointer << 8) | state));
+        internal void Update(ItemState state, int dataPointer)
+        {
+            _header.State = state;
+            _header.DataPointer = dataPointer;
+            _bufferStart.Span.WriteAdvance(_header);
+        }
     }
 }

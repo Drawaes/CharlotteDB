@@ -80,6 +80,8 @@ namespace CharlotteDB.JamieStorage.Core
             return (false, default);
         }
 
+        public Task FlushToDisk() => WriteInMemoryTable();
+
         public Task PutAsync(Memory<byte> key, Memory<byte> data)
         {
             _currentSkipList.Insert(key.Span, data.Span);

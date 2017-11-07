@@ -11,6 +11,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         public int IndexFilterLength;
         public int BlockRegionIndex;
         public int BlockRegionLength;
+
         public int DeletedBloomFilterIndex;
         public int DeletedBloomFilterLength;
         public int DeletedRegionIndex;

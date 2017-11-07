@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
 using CharlotteDB.Core;
 using CharlotteDB.Core.Allocation;
@@ -13,8 +14,8 @@ namespace CharlotteDB.JamieStorage.InMemory
         private List<OwnedMemory<byte>> _keyBuffers = new List<OwnedMemory<byte>>();
         private List<OwnedMemory<byte>> _dataBuffers = new List<OwnedMemory<byte>>();
         private int _bufferSize;
-        private uint _currentKeyPointer;
-        private uint _currentDataPointer;
+        private int _currentKeyPointer;
+        private int _currentDataPointer;
         private TCompare _comparer;
         private Allocator _allocator;
         private int _count;
@@ -23,9 +24,9 @@ namespace CharlotteDB.JamieStorage.InMemory
         private Random _random;
         private uint _maxHeight;
         private int _bufferShift;
-        private uint _bufferMask;
-        private uint[] _headNode;
-        private long _currentNodePointer = -1;
+        private int _bufferMask;
+        private int[] _headNode;
+        private int _currentNodePointer = -1;
 
         public SkipList(int seed, TCompare comparer, Allocator allocator)
         {
@@ -33,14 +34,14 @@ namespace CharlotteDB.JamieStorage.InMemory
             _allocator = allocator;
             _bufferShift = (int)Math.Ceiling(Math.Log(allocator.NormalBufferSize, 2));
             _bufferSize = 1 << _bufferShift;
-            _bufferMask = (uint)(1 << _bufferShift) - 1;
+            _bufferMask = (1 << _bufferShift) - 1;
             _keyBuffers.Add(_allocator.AllocateNormalBuffer());
             _dataBuffers.Add(_allocator.AllocateNormalBuffer());
             _currentKeyPointer = 1;
             _currentDataPointer = 1;
             _random = new Random(seed);
             _maxHeight = byte.MaxValue;
-            _headNode = new uint[_maxHeight];
+            _headNode = new int[_maxHeight];
         }
 
         public SkipList(TCompare comparer, Allocator allocator) : this(Environment.TickCount, comparer, allocator)
@@ -54,7 +55,7 @@ namespace CharlotteDB.JamieStorage.InMemory
         {
             get
             {
-                var node = GetNodeForPointer((uint)_currentNodePointer);
+                var node = GetNodeForPointer(_currentNodePointer);
                 var mem = new MemoryNode()
                 {
                     Data = GetDataFromPointer(node.DataPointer),
@@ -65,49 +66,54 @@ namespace CharlotteDB.JamieStorage.InMemory
             }
         }
 
-        private SkipListNode GetNodeForPointer(uint pointerToItem)
+        private SkipListNode GetNodeForPointer(int pointerToItem)
         {
             var bufferId = pointerToItem >> _bufferShift;
             var bufferIndex = pointerToItem & _bufferMask;
-            var span = _keyBuffers[(int)bufferId].Memory.Slice((int)bufferIndex);
+            var span = _keyBuffers[bufferId].Memory.Slice(bufferIndex);
             return new SkipListNode(span);
         }
 
-        private Span<byte> AllocateMemory(List<OwnedMemory<byte>> buffers, uint size, ref uint currentPointer, out uint startPointer)
+        private Span<byte> AllocateMemory(List<OwnedMemory<byte>> buffers, int size, ref int currentPointer, out int startPointer)
         {
             var bufferStart = currentPointer >> _bufferShift;
             var bufferEnd = (currentPointer + size) >> _bufferShift;
             if (bufferStart != bufferEnd)
             {
                 buffers.Add(_allocator.AllocateNormalBuffer());
-                currentPointer = (uint)((buffers.Count - 1) * _bufferSize);
+                currentPointer = (buffers.Count - 1) * _bufferSize;
                 return AllocateMemory(buffers, size, ref currentPointer, out startPointer);
             }
 
-            var nodeSpan = buffers[(int)bufferStart].Span.Slice((int)(currentPointer & _bufferMask), (int)size);
+            var nodeSpan = buffers[bufferStart].Span.Slice((currentPointer & _bufferMask), size);
             startPointer = currentPointer;
             currentPointer += size;
             return nodeSpan;
         }
 
-        private Span<uint> AllocateNode(ushort height, Span<byte> key, long data, byte state, out uint pointerStart)
+        private Span<int> AllocateNode(ushort height, Span<byte> key, int data, ItemState state, out int pointerStart)
         {
-            var sizeNeeded = key.Length + (sizeof(ushort) * 2) + sizeof(long) + (height << 2);
+            var sizeNeeded = key.Length + Unsafe.SizeOf<SkipNodeHeader>() + (height << 2);
 
-            var nodeSpan = AllocateMemory(_keyBuffers, (uint)sizeNeeded, ref _currentKeyPointer, out pointerStart);
-            // Key always goes first
-            nodeSpan = nodeSpan.WriteAdvance(height);
-            nodeSpan = nodeSpan.WriteAdvance((ushort)key.Length);
-            nodeSpan = nodeSpan.WriteAdvance(((data << 8) | state));
-            var returnSpan = nodeSpan.Slice(0, height << 2).NonPortableCast<byte, uint>();
+            var nodeSpan = AllocateMemory(_keyBuffers, sizeNeeded, ref _currentKeyPointer, out pointerStart);
+
+            var header = new SkipNodeHeader()
+            {
+                DataPointer = data,
+                Height = height,
+                KeyLength = (ushort)key.Length,
+                State = state,
+            };
+            nodeSpan = nodeSpan.WriteAdvance(header);
+            var returnSpan = nodeSpan.NonPortableCast<byte, int>().Slice(0, height);
             nodeSpan = nodeSpan.Slice(height << 2);
             key.CopyTo(nodeSpan);
             return returnSpan;
         }
 
-        private long StoreData(Span<byte> data)
+        private int StoreData(Span<byte> data)
         {
-            var span = AllocateMemory(_dataBuffers, (uint)(data.Length + sizeof(int)), ref _currentDataPointer, out var startPointer);
+            var span = AllocateMemory(_dataBuffers, (data.Length + sizeof(int)), ref _currentDataPointer, out var startPointer);
             span = span.WriteAdvance(data.Length);
             data.CopyTo(span);
             return startPointer;
@@ -123,16 +129,16 @@ namespace CharlotteDB.JamieStorage.InMemory
             return memory.Slice(sizeof(int), length);
         }
 
-        public void Insert(Span<byte> key, Span<byte> data) => Insert(key, data, 0);
+        public void Insert(Span<byte> key, Span<byte> data) => Insert(key, data, ItemState.Alive);
 
-        public void Remove(Span<byte> key) => Insert(key, new Span<byte>(), 1);
+        public void Remove(Span<byte> key) => Insert(key, new Span<byte>(), ItemState.Deleted);
 
-        private void Insert(Span<byte> key, Span<byte> data, byte state)
+        private void Insert(Span<byte> key, Span<byte> data, ItemState state)
         {
             var height = GetHeight();
             var dataStore = StoreData(data);
             var pointerSpan = AllocateNode((byte)height, key, dataStore, state, out var pointerStart);
-            var currentPointerList = (Span<uint>)_headNode;
+            var currentPointerList = (Span<int>)_headNode;
             for (var level = (_height - 1); level >= 0;)
             {
                 var nextPointer = currentPointerList[level];
@@ -182,7 +188,7 @@ namespace CharlotteDB.JamieStorage.InMemory
         public SearchResult TryFind(Span<byte> key, out Memory<byte> data)
         {
             var levels = _height;
-            var currentPointerTable = (Span<uint>)_headNode;
+            var currentPointerTable = (Span<int>)_headNode;
             for (var l = levels - 1; l >= 0;)
             {
                 if (currentPointerTable[l] == 0)
@@ -250,6 +256,12 @@ namespace CharlotteDB.JamieStorage.InMemory
 
         public void Reset() => _currentNodePointer = -1;
 
+        public void UpdateState(ItemState state)
+        {
+            var node = GetNodeForPointer(_currentNodePointer);
+            node.Update(state, node.DataPointer);
+        }
+
         public bool Next()
         {
             if (_currentNodePointer == -1)
@@ -258,7 +270,7 @@ namespace CharlotteDB.JamieStorage.InMemory
                 return true;
             }
 
-            var skip = GetNodeForPointer((uint)_currentNodePointer);
+            var skip = GetNodeForPointer(_currentNodePointer);
             if (skip.PointerTable[0] == 0)
             {
                 return false;
