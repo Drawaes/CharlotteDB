@@ -8,6 +8,7 @@ using CharlotteDB.Core.Allocation;
 using CharlotteDB.Core.Keys;
 using CharlotteDB.JamieStorage.Core;
 using CharlotteDB.JamieStorage.InMemory;
+using Microsoft.Extensions.Logging;
 
 namespace SampleSkipLists
 {
@@ -30,19 +31,24 @@ namespace SampleSkipLists
 
         private static async Task TestDB()
         {
+            var loggerFactory = new LoggerFactory();
+            loggerFactory.AddConsole();
+            var logger = loggerFactory.CreateLogger<Program>();
+
             var outputList = new List<(bool deleted, Memory<byte> bytes)>();
-            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(65536)))
+            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(1024 * 1024), loggerFactory))
             {
                 var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
-                var rnd = new Random();
+                var rnd = new Random(7777);
 
+                logger.LogInformation("Adding records");
                 for (var i = 0; i < list.Length; i++)
                 {
                     var l = list[i];
                     var bytes = Encoding.UTF8.GetBytes(l);
                     var span = new Memory<byte>(bytes);
 
-                    if (i != 0 && rnd.NextDouble() < 0.05)
+                    if (rnd.NextDouble() < 0.05)
                     {
                         await database.PutAsync(span, span);
                         outputList.Add((true, span));
@@ -53,8 +59,14 @@ namespace SampleSkipLists
                         outputList.Add((false, span));
                     }
                 }
+                logger.LogInformation("Information all logged");
 
-                for(var i = 0; i < outputList.Count;i++)
+                database.WriteDebugSkipList("C:\\code\\database\\");
+
+                await database.FlushToDisk();
+
+                logger.LogInformation("Removing Records");
+                for (var i = 0; i < outputList.Count; i++)
                 {
                     var (d, b) = outputList[i];
                     if (d == true)
@@ -62,9 +74,9 @@ namespace SampleSkipLists
                         await database.TryRemoveAsync(b);
                     }
                 }
-
-                await database.FlushToDisk();
-
+                logger.LogInformation("Finished deleting records");
+                
+                var notFound = 0;
                 for (var i = 0; i < outputList.Count; i++)
                 {
                     var (deleted, bytes) = outputList[i];
@@ -72,11 +84,15 @@ namespace SampleSkipLists
                     var (found, data) = database.TryGetData(bytes);
                     if ((!deleted && !found) || (deleted && found))
                     {
-                        throw new InvalidOperationException();
+                        logger.LogError("Not found total {count} ----- {notFound}", notFound++, list[i]);
                     }
-                    if ((!deleted) && !data.Span.SequenceEqual(bytes.Span))
+                    else if ((!deleted) && !data.Span.SequenceEqual(bytes.Span))
                     {
                         throw new InvalidOperationException();
+                    }
+                    if(i % 20000 == 0)
+                    {
+                        logger.LogInformation("Found {count} items still {remaining} to go", i + 1, outputList.Count - i);
                     }
                 }
             }
@@ -128,7 +144,7 @@ namespace SampleSkipLists
             }
 
             var totalCount = skipList.Count;
-            
+
         }
     }
 }

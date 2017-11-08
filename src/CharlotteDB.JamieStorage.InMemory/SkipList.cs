@@ -9,7 +9,7 @@ using CharlotteDB.Core.Keys;
 
 namespace CharlotteDB.JamieStorage.InMemory
 {
-    public class SkipList<TCompare> where TCompare : IKeyComparer
+    public class SkipList<TCompare> : IDisposable where TCompare : IKeyComparer
     {
         private List<OwnedMemory<byte>> _keyBuffers = new List<OwnedMemory<byte>>();
         private List<OwnedMemory<byte>> _dataBuffers = new List<OwnedMemory<byte>>();
@@ -60,7 +60,7 @@ namespace CharlotteDB.JamieStorage.InMemory
                 {
                     Data = GetDataFromPointer(node.DataPointer),
                     Key = node.Key,
-                    State = (ItemState)node.State
+                    State = node.State
                 };
                 return mem;
             }
@@ -262,6 +262,23 @@ namespace CharlotteDB.JamieStorage.InMemory
             node.Update(state, node.DataPointer);
         }
 
+        public void WriteOutList(string path)
+        {
+            for (var i = 0; i < _height;i++)
+            {
+                var file = System.IO.Path.Combine(path, $"level{i}.txt");
+                var sb = new StringBuilder();
+                var currentPointer = _headNode[i];
+                while(currentPointer != 0)
+                {
+                    var nextNode = GetNodeForPointer(currentPointer);
+                    sb.AppendLine(Encoding.UTF8.GetString(nextNode.Key.Span.ToArray()));
+                    currentPointer = nextNode.PointerTable[i];
+                }
+                System.IO.File.WriteAllText(file, sb.ToString());
+            }
+        }
+
         public bool Next()
         {
             if (_currentNodePointer == -1)
@@ -278,6 +295,18 @@ namespace CharlotteDB.JamieStorage.InMemory
 
             _currentNodePointer = skip.PointerTable[0];
             return true;
+        }
+
+        public void Dispose()
+        {
+            foreach(var b in _dataBuffers)
+            {
+                _allocator.ReturnBuffer(b);
+            }
+            foreach(var b in _keyBuffers)
+            {
+                _allocator.ReturnBuffer(b);
+            }
         }
     }
 }

@@ -92,10 +92,10 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         private async Task WriteBlockDataAsync()
         {
-            _bloomFilter = BloomFilter.Create(_inMemory.Count - _deletedCount, _bitsToUseForBloomFilter, 3, _database.Hasher);
+            _bloomFilter = BloomFilter.Create(_inMemory.Count - _deletedCount, _bitsToUseForBloomFilter, 2, _database.Hasher);
             _inMemory.Reset();
             _indexTable.BlockRegionIndex = (int)_stream.Position;
-            var nodeCount = 1;
+            var nodeCount = 0;
             var tempBuffer = new byte[Unsafe.SizeOf<EntryHeader>()];
             while (_inMemory.Next())
             {
@@ -136,8 +136,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                 switch (node.State)
                 {
                     case ItemState.Deleted:
-                        var searchResult = _database.FindNode(node.Key);
-                        if (searchResult == SearchResult.Found)
+                        if (_database.MayContainNode(node.Key))
                         {
                             tempBuffer.AsSpan().WriteAdvance((ushort)node.Key.Length);
                             await _stream.WriteAsync(new Memory<byte>(tempBuffer));
@@ -152,7 +151,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
             _indexTable.DeletedRegionLength = (int)(_stream.Position - _indexTable.DeletedRegionIndex);
             _deletedCount = deletedCount;
-            _deleteBloomFilter = BloomFilter.Create(deletedNewCount, _bitsToUseForBloomFilter, 3, _database.Hasher);
+            _deleteBloomFilter = BloomFilter.Create(deletedNewCount, _bitsToUseForBloomFilter, 2, _database.Hasher);
         }
     }
 }

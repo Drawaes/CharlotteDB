@@ -142,6 +142,8 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             return SearchResult.Found;
         }
 
+        internal bool MayContainNode(Memory<byte> key) => _bloomFilter.PossiblyContains(key.Span);
+
         private int FindRow(Memory<byte> key, int blockStart, int blockEnd)
         {
             var sizeOfBlock = blockEnd - blockStart;
