@@ -26,7 +26,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             _database = database;
         }
 
-        public async Task WriteInMemoryTableAsync(SkipList<TComparer> inMemory, int bitsToUseForBloomFilter)
+        public async Task WriteInMemoryTableAsync(SkipList2<TComparer> inMemory, int bitsToUseForBloomFilter)
         {
             using (var write = new StorageWriter<TComparer>(bitsToUseForBloomFilter, inMemory, _database.Comparer, _database))
             {

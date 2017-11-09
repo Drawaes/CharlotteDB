@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using CharlotteDB.Core;
@@ -15,6 +16,7 @@ namespace CharlotteDB.JamieStorage.InMemory
         {
             _bufferStart = buffer;
             _header = buffer.Span.Read<SkipNodeHeader>();
+            Debug.Assert(_header.Height > 0);
         }
 
         public Span<int> PointerTable => _bufferStart.Span.Slice(Unsafe.SizeOf<SkipNodeHeader>()).NonPortableCast<byte, int>().Slice(0, _header.Height);

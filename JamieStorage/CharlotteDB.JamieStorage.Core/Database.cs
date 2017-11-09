@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CharlotteDB.Core;
@@ -15,8 +16,8 @@ namespace CharlotteDB.JamieStorage.Core
     public class Database<TComparer> : IDisposable where TComparer : IKeyComparer
     {
         private string _folder;
-        private SkipList<TComparer> _currentSkipList;
-        private SkipList<TComparer> _oldSkipList;
+        private SkipList2<TComparer> _currentSkipList;
+        private SkipList2<TComparer> _oldSkipList;
         private List<StorageFile<TComparer>> _storageTables = new List<StorageFile<TComparer>>();
         private FNV1Hash _hasher;
         private DatabaseSettings _settings;
@@ -38,7 +39,7 @@ namespace CharlotteDB.JamieStorage.Core
             _comparer = comparer;
             _folder = folder;
             _settings = settings;
-            _currentSkipList = new SkipList<TComparer>(comparer, allocator);
+            _currentSkipList = new SkipList2<TComparer>(comparer, allocator);
         }
 
         public TComparer Comparer => _comparer;
@@ -87,7 +88,14 @@ namespace CharlotteDB.JamieStorage.Core
 
         public void WriteDebugSkipList(string path)
         {
-            _currentSkipList.WriteOutList(path);
+            //var sb = new StringBuilder();
+            //while(_currentSkipList.Next())
+            //{
+            //    var node = _currentSkipList.CurrentNode;
+            //    sb.AppendLine(Encoding.UTF8.GetString(node.Key.ToArray()));
+            //}
+            //System.IO.File.WriteAllText("C:\\code\\output.txt", sb.ToString());
+            //_currentSkipList.WriteOutList(path);
         }
 
         public Task FlushToDisk() => WriteInMemoryTableAsync();
@@ -158,13 +166,12 @@ namespace CharlotteDB.JamieStorage.Core
 
         private async Task WriteInMemoryTableAsync()
         {
-            return;
             using (var scope = _logger.BeginScope("Write Memory Table"))
             {
                 _logger.LogInformation("Starting");
 
                 Interlocked.Exchange(ref _oldSkipList, _currentSkipList);
-                var currentList = new SkipList<TComparer>(_comparer, _allocator);
+                var currentList = new SkipList2<TComparer>(_comparer, _allocator);
                 Interlocked.Exchange(ref _currentSkipList, currentList);
 
                 var storage = new StorageFile<TComparer>(NextFileTableName(), this);

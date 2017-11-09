@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,6 +32,7 @@ namespace SampleSkipLists
 
         private static async Task TestDB()
         {
+            
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddConsole();
             var logger = loggerFactory.CreateLogger<Program>();
@@ -48,49 +50,53 @@ namespace SampleSkipLists
                     var bytes = Encoding.UTF8.GetBytes(l);
                     var span = new Memory<byte>(bytes);
 
+                    await database.PutAsync(span, span);
                     if (rnd.NextDouble() < 0.05)
                     {
-                        await database.PutAsync(span, span);
                         outputList.Add((true, span));
                     }
                     else
                     {
-                        await database.PutAsync(span, span);
                         outputList.Add((false, span));
                     }
                 }
                 logger.LogInformation("Information all logged");
 
-                database.WriteDebugSkipList("C:\\code\\database\\");
+                //database.WriteDebugSkipList("C:\\code\\database\\");
 
                 await database.FlushToDisk();
 
-                logger.LogInformation("Removing Records");
-                for (var i = 0; i < outputList.Count; i++)
-                {
-                    var (d, b) = outputList[i];
-                    if (d == true)
-                    {
-                        await database.TryRemoveAsync(b);
-                    }
-                }
-                logger.LogInformation("Finished deleting records");
-                
+                //logger.LogInformation("Removing Records");
+                //for (var i = 0; i < outputList.Count; i++)
+                //{
+                //    var (d, b) = outputList[i];
+                //    if (d == true)
+                //    {
+                //        await database.TryRemoveAsync(b);
+                //    }
+                //}
+                //logger.LogInformation("Finished deleting records");
+
                 var notFound = 0;
+                var foundDeleted = 0;
                 for (var i = 0; i < outputList.Count; i++)
                 {
                     var (deleted, bytes) = outputList[i];
 
                     var (found, data) = database.TryGetData(bytes);
-                    if ((!deleted && !found) || (deleted && found))
+                    if ((!deleted && !found))
                     {
-                        logger.LogError("Not found total {count} ----- {notFound}", notFound++, list[i]);
+                        logger.LogError("Not found total {count} ----- {notFound}", ++notFound, list[i]);
+                    }
+                    else if ((deleted && found))
+                    {
+                        //logger.LogError("Found a deleted record {count} {foundItem}", ++foundDeleted, list[i]);
                     }
                     else if ((!deleted) && !data.Span.SequenceEqual(bytes.Span))
                     {
                         throw new InvalidOperationException();
                     }
-                    if(i % 20000 == 0)
+                    if (i % 20000 == 0)
                     {
                         logger.LogInformation("Found {count} items still {remaining} to go", i + 1, outputList.Count - i);
                     }
@@ -104,7 +110,7 @@ namespace SampleSkipLists
 
             var comparer = new ByteByByteComparer();
             var allocator = new DummyAllocator(1024 * 1024);
-            var skipList = new SkipList<ByteByByteComparer>(comparer, allocator);
+            var skipList = new SkipList2<ByteByByteComparer>(comparer, allocator);
             var sortedDict = new SortedDictionary<string, string>();
             var list = System.IO.File.ReadAllLines("C:\\code\\output.txt");
 
@@ -121,13 +127,13 @@ namespace SampleSkipLists
             }
             Console.Write($"time = {sw.ElapsedMilliseconds}");
 
-            var sb = new StringBuilder();
-            while (skipList.Next())
-            {
-                sb.AppendLine(Encoding.UTF8.GetString(skipList.CurrentNode.Key.ToArray()));
-            }
+            //var sb = new StringBuilder();
+            //while (skipList.Next())
+            //{
+            //    sb.AppendLine(Encoding.UTF8.GetString(skipList.CurrentNode.Key.ToArray()));
+            //}
 
-            System.IO.File.WriteAllText("C:\\code\\output.txt", sb.ToString());
+            //System.IO.File.WriteAllText("C:\\code\\output.txt", sb.ToString());
 
             for (var i = 0; i < list.Length; i++)
             {
@@ -143,6 +149,8 @@ namespace SampleSkipLists
                 }
             }
 
+
+            Console.Write($"time = {sw.ElapsedMilliseconds}");
             var totalCount = skipList.Count;
 
         }

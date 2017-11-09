@@ -13,7 +13,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
     public class StorageWriter<TComparer> : IDisposable where TComparer : IKeyComparer
     {
-        private SkipList<TComparer> _inMemory;
+        private SkipList2<TComparer> _inMemory;
         private TComparer _comparer;
         private int _bitsToUseForBloomFilter;
         private Stream _stream;
@@ -24,7 +24,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private List<(Memory<byte> key, int start, int end)> _index = new List<(Memory<byte> key, int start, int end)>();
         private Database<TComparer> _database;
 
-        public StorageWriter(int bitsToUseForBloomFilter, SkipList<TComparer> inMemory, TComparer comparer, Database<TComparer> database)
+        public StorageWriter(int bitsToUseForBloomFilter, SkipList2<TComparer> inMemory, TComparer comparer, Database<TComparer> database)
         {
             _database = database;
             _bitsToUseForBloomFilter = bitsToUseForBloomFilter;
