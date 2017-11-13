@@ -28,7 +28,7 @@ namespace CharlotteDB.JamieStorage.Core
         private ILogger _logger;
         private SemaphoreSlim _semaphore = new SemaphoreSlim(0);
         private ManualResetEvent _finishedWrite = new ManualResetEvent(false);
-        private Task _backgroundWriter;
+        // private Task _backgroundWriter;
 
         public Database(string folder, DatabaseSettings settings, TComparer comparer, Allocator allocator, ILoggerFactory loggerFactory)
         {
@@ -86,32 +86,20 @@ namespace CharlotteDB.JamieStorage.Core
             return (false, default);
         }
 
-        public void WriteDebugSkipList(string path)
-        {
-            //var sb = new StringBuilder();
-            //while(_currentSkipList.Next())
-            //{
-            //    var node = _currentSkipList.CurrentNode;
-            //    sb.AppendLine(Encoding.UTF8.GetString(node.Key.ToArray()));
-            //}
-            //System.IO.File.WriteAllText("C:\\code\\output.txt", sb.ToString());
-            //_currentSkipList.WriteOutList(path);
-        }
-
         public Task FlushToDisk() => WriteInMemoryTableAsync();
 
-        //private async Task BackgroundWriterLoop()
-        //{
-        //    while (true)
-        //    {
-        //        await _semaphore.WaitAsync();
-        //        if (_currentSkipList.SpaceUsed > _settings.MaxInMemoryTableUse)
-        //        {
-        //            await WriteInMemoryTableAsync();
-        //        }
-        //        _finishedWrite.Set();
-        //    }
-        //}
+        private async Task BackgroundWriterLoop()
+        {
+            while (true)
+            {
+                await _semaphore.WaitAsync();
+                if (_currentSkipList.SpaceUsed > _settings.MaxInMemoryTableUse)
+                {
+                    await WriteInMemoryTableAsync();
+                }
+                _finishedWrite.Set();
+            }
+        }
 
         public Task PutAsync(Memory<byte> key, Memory<byte> data)
         {
@@ -155,7 +143,7 @@ namespace CharlotteDB.JamieStorage.Core
             for (var i = _storageTables.Count - 1; i >= 0; i--)
             {
                 var st = _storageTables[i];
-                if( st.MayContainNode(key))
+                if (st.MayContainNode(key))
                 {
                     return true;
                 }
@@ -184,11 +172,11 @@ namespace CharlotteDB.JamieStorage.Core
                 Interlocked.Exchange(ref _oldSkipList, null);
 
                 // TODO : Need to ensure there is no current reading transactions when we dispose
-                sList.Dispose();
+                //sList.Dispose();
                 _logger.LogInformation("Finished");
             }
         }
-        
+
         private string NextFileTableName() => System.IO.Path.Combine(_folder, $"table-1-{_currentLevelOneCount++}.bin");
 
         public void Dispose()

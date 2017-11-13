@@ -311,6 +311,8 @@ namespace CharlotteDB.JamieStorage.InMemory
             return newHeight;
         }
 
+        ~SkipList2() => Dispose();
+
         public void Dispose()
         {
             foreach (var b in _dataBuffers)
@@ -321,6 +323,7 @@ namespace CharlotteDB.JamieStorage.InMemory
             {
                 _allocator.ReturnBuffer(b);
             }
+            GC.SuppressFinalize(this);
         }
     }
 }

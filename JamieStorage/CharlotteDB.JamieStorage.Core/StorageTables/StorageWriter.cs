@@ -22,6 +22,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private BloomFilter<FNV1Hash> _bloomFilter;
         private BloomFilter<FNV1Hash> _deleteBloomFilter;
         private List<(Memory<byte> key, int start, int end)> _index = new List<(Memory<byte> key, int start, int end)>();
+        private List<(Memory<byte> key, int start, int end)> _smallerBlock = new List<(Memory<byte> key, int start, int end)>();
         private Database<TComparer> _database;
 
         public StorageWriter(int bitsToUseForBloomFilter, SkipList2<TComparer> inMemory, TComparer comparer, Database<TComparer> database)
@@ -36,13 +37,15 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         public async Task WriteToFile(string fileName)
         {
-            _stream = File.Open(fileName, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            _stream = File.Open(fileName, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+            await _stream.WriteAsync(StorageFile.MagicHeader);
             await WriteDeletedRecordsAsync();
             await WriteBlockDataAsync();
             await WriteBloomFilterAsync();
             await WriteDeletedBloomFilter();
             await WriteIndexAsync();
             await WriteIndexTableAsync();
+            await _stream.WriteAsync(StorageFile.MagicTrailer);
         }
 
         private async Task WriteDeletedBloomFilter()

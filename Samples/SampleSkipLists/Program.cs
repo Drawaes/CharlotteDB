@@ -38,7 +38,7 @@ namespace SampleSkipLists
             var logger = loggerFactory.CreateLogger<Program>();
 
             var outputList = new List<(bool deleted, Memory<byte> bytes)>();
-            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(1024 * 1024), loggerFactory))
+            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(50 * 1024), loggerFactory))
             {
                 var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
                 var rnd = new Random(7777);
@@ -66,16 +66,16 @@ namespace SampleSkipLists
 
                 await database.FlushToDisk();
 
-                //logger.LogInformation("Removing Records");
-                //for (var i = 0; i < outputList.Count; i++)
-                //{
-                //    var (d, b) = outputList[i];
-                //    if (d == true)
-                //    {
-                //        await database.TryRemoveAsync(b);
-                //    }
-                //}
-                //logger.LogInformation("Finished deleting records");
+                logger.LogInformation("Removing Records");
+                for (var i = 0; i < outputList.Count; i++)
+                {
+                    var (d, b) = outputList[i];
+                    if (d == true)
+                    {
+                        await database.TryRemoveAsync(b);
+                    }
+                }
+                logger.LogInformation("Finished deleting records");
 
                 var notFound = 0;
                 var foundDeleted = 0;
@@ -90,7 +90,7 @@ namespace SampleSkipLists
                     }
                     else if ((deleted && found))
                     {
-                        //logger.LogError("Found a deleted record {count} {foundItem}", ++foundDeleted, list[i]);
+                        logger.LogError("Found a deleted record {count} {foundItem}", ++foundDeleted, list[i]);
                     }
                     else if ((!deleted) && !data.Span.SequenceEqual(bytes.Span))
                     {

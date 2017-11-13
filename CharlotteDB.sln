@@ -26,7 +26,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CharlotteDB.Core", "src\Cha
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{491C54B2-F093-4300-B1E5-BD218C1828BD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CharlotteDB.JamieStorage.InMemory", "src\CharlotteDB.JamieStorage.InMemory\CharlotteDB.JamieStorage.InMemory.csproj", "{CFB59C01-77F2-4FD6-B1DF-342829377EE0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CharlotteDB.JamieStorage.InMemory", "src\CharlotteDB.JamieStorage.InMemory\CharlotteDB.JamieStorage.InMemory.csproj", "{CFB59C01-77F2-4FD6-B1DF-342829377EE0}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{31F00308-57DC-41ED-AB33-0FF53D1530B7}"
+	ProjectSection(SolutionItems) = preProject
+		.EditorConfig = .EditorConfig
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
