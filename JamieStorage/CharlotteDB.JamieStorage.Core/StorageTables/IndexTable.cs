@@ -7,10 +7,9 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
     {
         public int BloomFilterIndex;
         public int BloomFilterLength;
-        public int IndexFilterIndex;
-        public int IndexFilterLength;
         public int BlockRegionIndex;
         public int BlockRegionLength;
+        public int HeadNodeIndex;
 
         public int DeletedBloomFilterIndex;
         public int DeletedBloomFilterLength;

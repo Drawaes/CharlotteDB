@@ -20,6 +20,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private MemoryMappedFile _memoryMappedFile;
         private MappedFileMemory _mappedFile;
         private DeletedRecords<TComparer> _deletedRecords;
+        private BinaryTree<TComparer> _tree;
 
         public StorageFile(string fileName, Database<TComparer> database)
         {
@@ -47,21 +48,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             {
                 return (SearchResult.NotFound, default);
             }
-            var (index, end, exactMatch) = FindBlockToSearch(key);
-            if (exactMatch)
-            {
-                ReturnFoundData(index);
-            }
-            if (index == -1)
-            {
-                return (SearchResult.NotFound, default);
-            }
-            var rowIndex = FindRow(key, index, end);
-            if (rowIndex == -1)
-            {
-                return (SearchResult.NotFound, default);
-            }
-            return ReturnFoundData(rowIndex);
+            return _tree.FindNode(key.Span);
         }
 
         private (SearchResult result, Memory<byte> data) ReturnFoundData(int index)
@@ -94,6 +81,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             _indexTable = _mappedFile.Memory.Span.Slice(_mappedFile.Length - Unsafe.SizeOf<IndexTable>() - StorageFile.MagicTrailer.Length).Read<IndexTable>();
             _bloomFilter = new BloomFilter<FNV1Hash>(_mappedFile.Memory.Slice(_indexTable.BloomFilterIndex, _indexTable.BloomFilterLength).Span, _database.Hasher);
             _deletedRecords = new DeletedRecords<TComparer>(_indexTable, _mappedFile.Memory, _database.Hasher, _database.Comparer);
+            _tree = new BinaryTree<TComparer>(_mappedFile.Memory, _indexTable, _database.Comparer);
         }
 
         internal SearchResult FindNode(Memory<byte> key)
@@ -108,21 +96,8 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                 return SearchResult.NotFound;
             }
 
-            var (start, end, exactMatch) = FindBlockToSearch(key);
-            if (exactMatch)
-            {
-                return SearchResult.Found;
-            }
-            if (start == -1)
-            {
-                return SearchResult.NotFound;
-            }
-            var memLocation = FindRow(key, start, end);
-            if (memLocation == -1)
-            {
-                return SearchResult.NotFound;
-            }
-            return SearchResult.Found;
+            var (result, data) = _tree.FindNode(key.Span);
+            return result;
         }
 
         internal bool MayContainNode(Memory<byte> key) => _bloomFilter.PossiblyContains(key.Span);
@@ -153,33 +128,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
             return -1;
         }
-
-        private (int start, int end, bool exactMatch) FindBlockToSearch(Memory<byte> key)
-        {
-            var indexMem = _mappedFile.Memory.Span.Slice(_indexTable.IndexFilterIndex, _indexTable.IndexFilterLength);
-
-            var previousStart = -1;
-            var previousEnd = -1;
-            while (indexMem.Length > 0)
-            {
-                indexMem = indexMem.ReadAdvance<IndexRecord>(out var record);
-
-                var compare = _database.Comparer.Compare(key.Span, indexMem.Slice(0, record.KeySize));
-                if (compare == 0)
-                {
-                    return (record.BlockStart, record.BlockEnd, true);
-                }
-                else if (compare < 0)
-                {
-                    return (previousStart, previousEnd, false);
-                }
-                indexMem = indexMem.Slice(record.KeySize);
-                previousStart = record.BlockStart;
-                previousEnd = record.BlockEnd;
-            }
-            return (previousStart, previousEnd, false);
-        }
-
+        
         public void Dispose() => _memoryMappedFile?.Dispose();
     }
 }

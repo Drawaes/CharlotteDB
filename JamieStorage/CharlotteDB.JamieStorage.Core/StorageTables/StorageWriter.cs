@@ -19,10 +19,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private Stream _stream;
         private IndexTable _indexTable;
         private int _deletedCount;
-        private BloomFilter<FNV1Hash> _bloomFilter;
         private BloomFilter<FNV1Hash> _deleteBloomFilter;
-        private List<(Memory<byte> key, int start, int end)> _index = new List<(Memory<byte> key, int start, int end)>();
-        private List<(Memory<byte> key, int start, int end)> _smallerBlock = new List<(Memory<byte> key, int start, int end)>();
         private Database<TComparer> _database;
 
         public StorageWriter(int bitsToUseForBloomFilter, SkipList2<TComparer> inMemory, TComparer comparer, Database<TComparer> database)
@@ -38,12 +35,21 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         public async Task WriteToFile(string fileName)
         {
             _stream = File.Open(fileName, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+            
             await _stream.WriteAsync(StorageFile.MagicHeader);
             await WriteDeletedRecordsAsync();
-            await WriteBlockDataAsync();
-            await WriteBloomFilterAsync();
+
+            var binWriter = new BinaryTreeWriter<TComparer>(3, _database, _inMemory.Count - _deletedCount);
+            await binWriter.WriteTreeAsync(_inMemory, _stream);
+
+            _indexTable.BlockRegionIndex = binWriter.StartOfData;
+            _indexTable.BlockRegionLength = binWriter.EndOfData - binWriter.StartOfData;
+            _indexTable.HeadNodeIndex = binWriter.RootNode;
+            _indexTable.BloomFilterIndex = (int)_stream.Position;
+            await binWriter.BloomFilter.SaveAsync(_stream);
+            _indexTable.BloomFilterLength = (int)(_stream.Position - _indexTable.BloomFilterIndex);
+
             await WriteDeletedBloomFilter();
-            await WriteIndexAsync();
             await WriteIndexTableAsync();
             await _stream.WriteAsync(StorageFile.MagicTrailer);
         }
@@ -62,71 +68,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             tempBuffer.AsSpan().WriteAdvance(_indexTable);
             await _stream.WriteAsync(tempBuffer);
         }
-
-        private async Task WriteIndexAsync()
-        {
-            _indexTable.IndexFilterIndex = (int)_stream.Position;
-
-            var tempBuffer = new byte[Unsafe.SizeOf<IndexRecord>()];
-            for (var i = 0; i < _index.Count; i++)
-            {
-                var (key, start, end) = _index[i];
-                var record = new IndexRecord()
-                {
-                    KeySize = (ushort)key.Length,
-                    BlockStart = start,
-                    BlockEnd = i == (_index.Count - 1) ?
-                        (_indexTable.BlockRegionIndex + _indexTable.BlockRegionLength) : _index[i + 1].start,
-                };
-                tempBuffer.AsSpan().WriteAdvance(record);
-                await _stream.WriteAsync(tempBuffer);
-                await _stream.WriteAsync(key);
-            }
-
-            _indexTable.IndexFilterLength = (int)(_stream.Position - _indexTable.IndexFilterIndex);
-        }
-
-        private async Task WriteBloomFilterAsync()
-        {
-            _indexTable.BloomFilterIndex = (int)_stream.Position;
-            await _bloomFilter.SaveAsync(_stream);
-            _indexTable.BloomFilterLength = (int)(_stream.Position - _indexTable.BloomFilterIndex);
-        }
-
-        private async Task WriteBlockDataAsync()
-        {
-            _bloomFilter = BloomFilter.Create(_inMemory.Count - _deletedCount, _bitsToUseForBloomFilter, 2, _database.Hasher);
-            _inMemory.Reset();
-            _indexTable.BlockRegionIndex = (int)_stream.Position;
-            var nodeCount = 0;
-            var tempBuffer = new byte[Unsafe.SizeOf<EntryHeader>()];
-            while (_inMemory.Next())
-            {
-                var node = _inMemory.CurrentNode;
-                if (node.State != ItemState.Alive)
-                {
-                    if (node.State == ItemState.DeletedNew)
-                    {
-                        _deleteBloomFilter.Add(node.Key.Span);
-                    }
-                    continue;
-                }
-
-                _bloomFilter.Add(node.Key.Span);
-                var header = new EntryHeader() { KeySize = (ushort)node.Key.Length, DataSize = node.Data.Length };
-                if (nodeCount % 15 == 0)
-                {
-                    _index.Add((node.Key, (int)_stream.Position, 0));
-                }
-                nodeCount++;
-                tempBuffer.AsSpan().WriteAdvance(header);
-                await _stream.WriteAsync(tempBuffer);
-                await _stream.WriteAsync(node.Key);
-                await _stream.WriteAsync(node.Data);
-            }
-            _indexTable.BlockRegionLength = (int)(_stream.Position - _indexTable.BlockRegionIndex);
-        }
-
+        
         private async Task WriteDeletedRecordsAsync()
         {
             _indexTable.DeletedRegionIndex = 0;
