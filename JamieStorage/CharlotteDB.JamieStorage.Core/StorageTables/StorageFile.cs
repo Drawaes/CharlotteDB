@@ -17,9 +17,9 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private BloomFilter<FNV1Hash> _bloomFilter;
         private Database<TComparer> _database;
         private IndexTable _indexTable;
-        private MemoryMappedFile _memoryMappedFile;
-        private MappedFileMemory _mappedFile;
-        private DeletedRecords<TComparer> _deletedRecords;
+        private MemoryMappedFile? _memoryMappedFile;
+        private MappedFileMemory? _mappedFile;
+        private DeletedRecords<TComparer>? _deletedRecords;
         private BinaryTree<TComparer> _tree;
 
         public StorageFile(string fileName, Database<TComparer> database)
@@ -30,9 +30,9 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         public async Task WriteInMemoryTableAsync(SkipList2<TComparer> inMemory, int bitsToUseForBloomFilter)
         {
-            using (var write = new StorageWriter<TComparer>(bitsToUseForBloomFilter, inMemory, _database.Comparer, _database))
+            using (var write = new StorageWriter<TComparer>(bitsToUseForBloomFilter, inMemory, _database.Comparer, _database, _fileName))
             {
-                await write.WriteToFile(_fileName);
+                await write.WriteToFile();
             }
             LoadFile();
         }
@@ -60,28 +60,28 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         private void LoadFile()
         {
-            _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open);
+            _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open)!;
             var fileInfo = new System.IO.FileInfo(_fileName);
             var fileSize = fileInfo.Length;
 
-            _mappedFile = new MappedFileMemory(0, (int)fileSize, _memoryMappedFile);
+            _mappedFile = new MappedFileMemory(0, (int)fileSize, _memoryMappedFile!);
 
-            var header = _mappedFile.Memory.Span.Slice(0, StorageFile.MagicHeader.Length);
+            var header = _mappedFile!.Memory.Span.Slice(0, StorageFile.MagicHeader.Length);
             if (!header.SequenceEqual(StorageFile.MagicHeader))
             {
                 throw new NotImplementedException("There was an error we need to cover for the file loading");
             }
 
-            var trailer = _mappedFile.Memory.Span.Slice(_mappedFile.Memory.Length - StorageFile.MagicTrailer.Length);
+            var trailer = _mappedFile!.Memory.Span.Slice(_mappedFile!.Memory.Length - StorageFile.MagicTrailer.Length);
             if (!trailer.SequenceEqual(StorageFile.MagicTrailer))
             {
                 throw new NotImplementedException("There was an error loading the file we need to sort this out");
             }
 
-            _indexTable = _mappedFile.Memory.Span.Slice(_mappedFile.Length - Unsafe.SizeOf<IndexTable>() - StorageFile.MagicTrailer.Length).Read<IndexTable>();
-            _bloomFilter = new BloomFilter<FNV1Hash>(_mappedFile.Memory.Slice(_indexTable.BloomFilterIndex, _indexTable.BloomFilterLength).Span, _database.Hasher);
-            _deletedRecords = new DeletedRecords<TComparer>(_indexTable, _mappedFile.Memory, _database.Hasher, _database.Comparer);
-            _tree = new BinaryTree<TComparer>(_mappedFile.Memory, _indexTable, _database.Comparer);
+            _indexTable = _mappedFile!.Memory.Span.Slice(_mappedFile!.Length - Unsafe.SizeOf<IndexTable>() - StorageFile.MagicTrailer.Length).Read<IndexTable>();
+            _bloomFilter = new BloomFilter<FNV1Hash>(_mappedFile!.Memory.Slice(_indexTable.BloomFilterIndex, _indexTable.BloomFilterLength).Span, _database.Hasher);
+            _deletedRecords = new DeletedRecords<TComparer>(_indexTable, _mappedFile!.Memory, _database.Hasher, _database.Comparer);
+            _tree = new BinaryTree<TComparer>(_mappedFile!.Memory, _indexTable, _database.Comparer);
         }
 
         internal SearchResult FindNode(Memory<byte> key)

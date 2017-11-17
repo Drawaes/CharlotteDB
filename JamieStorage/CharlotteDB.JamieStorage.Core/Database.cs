@@ -17,7 +17,7 @@ namespace CharlotteDB.JamieStorage.Core
     {
         private string _folder;
         private SkipList2<TComparer> _currentSkipList;
-        private SkipList2<TComparer> _oldSkipList;
+        private SkipList2<TComparer>? _oldSkipList;
         private List<StorageFile<TComparer>> _storageTables = new List<StorageFile<TComparer>>();
         private FNV1Hash _hasher;
         private DatabaseSettings _settings;
@@ -163,7 +163,7 @@ namespace CharlotteDB.JamieStorage.Core
                 Interlocked.Exchange(ref _currentSkipList, currentList);
 
                 var storage = new StorageFile<TComparer>(NextFileTableName(), this);
-                await storage.WriteInMemoryTableAsync(_oldSkipList, 3);
+                await storage.WriteInMemoryTableAsync(_oldSkipList ?? throw new ArgumentNullException(nameof(_oldSkipList)), 3);
 
                 // TODO : Make lockless threadsafe
                 _storageTables.Add(storage);

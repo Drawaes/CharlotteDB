@@ -47,8 +47,8 @@ namespace SampleSkipLists
                 for (var i = 0; i < list.Length; i++)
                 {
                     var l = list[i];
-                    var bytes = Encoding.UTF8.GetBytes(l);
-                    var span = new Memory<byte>(bytes);
+                    var bytes = l.ToCharArray();
+                    var span = new Memory<byte>(bytes.AsSpan().NonPortableCast<char,byte>().ToArray());
 
                     await database.PutAsync(span, span);
                     if (rnd.NextDouble() < 0.05)
@@ -76,6 +76,8 @@ namespace SampleSkipLists
                     }
                 }
                 logger.LogInformation("Finished deleting records");
+
+                await database.FlushToDisk();
 
                 var notFound = 0;
                 var foundDeleted = 0;

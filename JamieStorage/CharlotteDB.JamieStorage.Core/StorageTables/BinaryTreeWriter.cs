@@ -23,8 +23,9 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private int _bitsToUseForBloomFilter;
         private int _count;
 
-        public BinaryTreeWriter(int bitsToUseForBloomFilter, Database<TCompare> database, int count)
+        public BinaryTreeWriter(int bitsToUseForBloomFilter, Database<TCompare> database, int count, SkipList2<TCompare> inMemory)
         {
+            _inMemory = inMemory;
             _count = count;
             _bitsToUseForBloomFilter = bitsToUseForBloomFilter;
             _bloomFilter = new BloomFilter<FNV1Hash>(count, _bitsToUseForBloomFilter, 2, database.Hasher);
@@ -35,12 +36,11 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         public int EndOfData => _endOfData;
         public BloomFilter<FNV1Hash> BloomFilter => _bloomFilter;
 
-        public async Task WriteTreeAsync(SkipList2<TCompare> inMemory, Stream file)
+        public async Task WriteTreeAsync(Stream file)
         {
             _file = file;
             _startOfData = (int)file.Position;
-            _inMemory = inMemory;
-            inMemory.Reset();
+            _inMemory.Reset();
             _rootNode = await Recurse(_count);
             _endOfData = (int)file.Position;
         }

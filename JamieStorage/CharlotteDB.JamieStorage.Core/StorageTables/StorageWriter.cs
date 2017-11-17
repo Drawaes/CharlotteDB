@@ -19,11 +19,12 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         private Stream _stream;
         private IndexTable _indexTable;
         private int _deletedCount;
-        private BloomFilter<FNV1Hash> _deleteBloomFilter;
+        private BloomFilter<FNV1Hash>? _deleteBloomFilter;
         private Database<TComparer> _database;
 
-        public StorageWriter(int bitsToUseForBloomFilter, SkipList2<TComparer> inMemory, TComparer comparer, Database<TComparer> database)
+        public StorageWriter(int bitsToUseForBloomFilter, SkipList2<TComparer> inMemory, TComparer comparer, Database<TComparer> database, string fileName)
         {
+            _stream = File.Open(fileName, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
             _database = database;
             _bitsToUseForBloomFilter = bitsToUseForBloomFilter;
             _inMemory = inMemory;
@@ -32,15 +33,13 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         public void Dispose() => _stream?.Dispose();
 
-        public async Task WriteToFile(string fileName)
+        public async Task WriteToFile()
         {
-            _stream = File.Open(fileName, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-            
             await _stream.WriteAsync(StorageFile.MagicHeader);
             await WriteDeletedRecordsAsync();
 
-            var binWriter = new BinaryTreeWriter<TComparer>(3, _database, _inMemory.Count - _deletedCount);
-            await binWriter.WriteTreeAsync(_inMemory, _stream);
+            var binWriter = new BinaryTreeWriter<TComparer>(3, _database, _inMemory.Count - _deletedCount, _inMemory);
+            await binWriter.WriteTreeAsync(_stream);
 
             _indexTable.BlockRegionIndex = binWriter.StartOfData;
             _indexTable.BlockRegionLength = binWriter.EndOfData - binWriter.StartOfData;
@@ -58,7 +57,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
         {
             // write out bloom filter
             _indexTable.DeletedBloomFilterIndex = (int)_stream.Position;
-            await _deleteBloomFilter.SaveAsync(_stream);
+            await _deleteBloomFilter?.SaveAsync(_stream);
             _indexTable.DeletedBloomFilterLength = (int)(_stream.Position - _indexTable.DeletedBloomFilterIndex);
         }
 
