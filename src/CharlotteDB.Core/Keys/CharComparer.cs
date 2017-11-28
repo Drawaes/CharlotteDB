@@ -18,9 +18,8 @@ namespace CharlotteDB.Core.Keys
             }
         }
 
-        public bool Equals(Span<byte> key1, Span<byte> key2)
-        {
-            return Compare(key1, key2) == 0;
-        }
+        public int Compare(Memory<byte> x, Memory<byte> y) => Compare(x.Span, y.Span);
+
+        public bool Equals(Span<byte> key1, Span<byte> key2) => Compare(key1, key2) == 0;
     }
 }

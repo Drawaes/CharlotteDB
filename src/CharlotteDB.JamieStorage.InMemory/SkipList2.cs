@@ -10,7 +10,7 @@ using CharlotteDB.Core.Keys;
 
 namespace CharlotteDB.JamieStorage.InMemory
 {
-    public class SkipList2<TCompare> : IDisposable where TCompare : IKeyComparer
+    public class SkipList2 : IInMemoryStore
     {
         private const int MAXHEIGHT = 100;
         private const double LEVELPROBABILITY = 0.5;
@@ -23,25 +23,11 @@ namespace CharlotteDB.JamieStorage.InMemory
         private byte _currentHeight;
         private int[] _headNode;
         private Random _random = new Random();
-        private TCompare _comparer;
+        private IKeyComparer _comparer;
         private Allocator _allocator;
         private int _count;
         private int _iteratorNodePointer = -2;
-
-        public SkipList2(TCompare comparer, Allocator allocator)
-        {
-            _allocator = allocator;
-            _comparer = comparer;
-            _headNode = new int[MAXHEIGHT];
-            for (var i = 0; i < _headNode.Length; i++)
-            {
-                _headNode[i] = -1;
-            }
-            _bufferSize = _allocator.NormalBufferSize;
-            _keyBuffers.Add(_allocator.AllocateNormalBuffer());
-            _dataBuffers.Add(_allocator.AllocateNormalBuffer());
-        }
-
+        
         public int Count => _count;
         public long SpaceUsed => _currentDataPointer + _currentKeyPointer;
 
@@ -324,6 +310,21 @@ namespace CharlotteDB.JamieStorage.InMemory
                 _allocator.ReturnBuffer(b);
             }
             GC.SuppressFinalize(this);
+        }
+
+        public void Init(Allocator allocator, IKeyComparer comparer)
+        {
+            _allocator = allocator;
+            _comparer = comparer;
+            _headNode = new int[MAXHEIGHT];
+            for (var i = 0; i < _headNode.Length; i++)
+            {
+                _headNode[i] = -1;
+            }
+
+            _bufferSize = _allocator.NormalBufferSize;
+            _keyBuffers.Add(_allocator.AllocateNormalBuffer());
+            _dataBuffers.Add(_allocator.AllocateNormalBuffer());
         }
     }
 }

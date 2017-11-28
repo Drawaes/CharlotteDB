@@ -7,21 +7,21 @@ using CharlotteDB.Core;
 
 namespace CharlotteDB.JamieStorage.Hashing
 {
-    public class BloomFilter<THash> : IBloomFilter where THash : IHash
+    public class BloomFilter : IBloomFilter
     {
-        private THash _hasher;
+        private IHash _hasher;
         private int _bitCount;
         private int _numberOfHashes;
         private int[] _backingArray;
         private ThreadLocal<long> _count = new ThreadLocal<long>(true);
         private ThreadLocal<ulong[]> _hashWorkingSet;
 
-        public BloomFilter(int estimatedElements, int bitsPerElement, int hashCount, THash hasher)
+        public BloomFilter(int estimatedElements, int bitsPerElement, int hashCount, IHash hasher)
             : this(estimatedElements * bitsPerElement, hasher, hashCount)
         {
         }
 
-        public BloomFilter(Span<byte> storage, THash hasher)
+        public BloomFilter(Span<byte> storage, IHash hasher)
         {
             _hasher = hasher;
             storage = storage.ReadAdvance(out _numberOfHashes);
@@ -32,7 +32,7 @@ namespace CharlotteDB.JamieStorage.Hashing
             _bitCount = _backingArray.Length * sizeof(int) * 8;
         }
 
-        public BloomFilter(int bitCount, THash hasher, int numberOfHashes)
+        public BloomFilter(int bitCount, IHash hasher, int numberOfHashes)
         {
             _hasher = hasher;
             _numberOfHashes = numberOfHashes;

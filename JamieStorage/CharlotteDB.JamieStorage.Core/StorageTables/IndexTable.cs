@@ -2,18 +2,27 @@ using System.Runtime.InteropServices;
 
 namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    [StructLayout(LayoutKind.Explicit)]
     internal struct IndexTable
     {
-        public int BloomFilterIndex;
-        public int BloomFilterLength;
-        public int BlockRegionIndex;
-        public int BlockRegionLength;
-        public int HeadNodeIndex;
+        [FieldOffset(0)]
+        public BTreeAndBloomFilter MainIndexes;
+        [FieldOffset(20)]
+        public BTreeAndBloomFilter DeletedIndexes;
+    }
 
-        public int DeletedBloomFilterIndex;
-        public int DeletedBloomFilterLength;
-        public int DeletedRegionIndex;
-        public int DeletedRegionLength;
+    [StructLayout(LayoutKind.Explicit)]
+    public struct BTreeAndBloomFilter
+    {
+        [FieldOffset(0)]
+        public int BloomFilterIndex;
+        [FieldOffset(4)]
+        public int BloomFilterLength;
+        [FieldOffset(8)]
+        public int RegionIndex;
+        [FieldOffset(12)]
+        public int RegionLength;
+        [FieldOffset(16)]
+        public int HeadNodeIndex;
     }
 }

@@ -11,26 +11,28 @@ using CharlotteDB.JamieStorage.InMemory;
 
 namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
-    public class StorageFile<TComparer> : IDisposable where TComparer : IKeyComparer
+    public class StorageFile : IDisposable
     {
-        private string _fileName;
-        private BloomFilter<FNV1Hash> _bloomFilter;
-        private Database<TComparer> _database;
-        private IndexTable _indexTable;
-        private MemoryMappedFile? _memoryMappedFile;
-        private MappedFileMemory? _mappedFile;
-        private DeletedRecords<TComparer>? _deletedRecords;
-        private BinaryTree<TComparer> _tree;
+        public readonly static byte[] MagicHeader = Encoding.UTF8.GetBytes("CharlotteDBStart");
+        public readonly static byte[] MagicTrailer = Encoding.UTF8.GetBytes("CharlotteDBEnd");
 
-        public StorageFile(string fileName, Database<TComparer> database)
+        private string _fileName;
+        private IDatabase _database;
+        private IndexTable _indexTable;
+        private MemoryMappedFile _memoryMappedFile;
+        private MappedFileMemory _mappedFile;
+        private RecordSet _deletedRecords;
+        private RecordSet _mainRecords;
+
+        public StorageFile(string fileName, IDatabase database)
         {
             _fileName = fileName;
             _database = database;
         }
 
-        public async Task WriteInMemoryTableAsync(SkipList2<TComparer> inMemory, int bitsToUseForBloomFilter)
+        public async Task WriteInMemoryTableAsync(IInMemoryStore inMemory, int bitsToUseForBloomFilter)
         {
-            using (var write = new StorageWriter<TComparer>(bitsToUseForBloomFilter, inMemory, _database.Comparer, _database, _fileName))
+            using (var write = new StorageWriter(bitsToUseForBloomFilter, inMemory, _database.Comparer, _database, _fileName))
             {
                 await write.WriteToFile();
             }
@@ -39,16 +41,17 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         internal (SearchResult result, Memory<byte> data) TryGetData(Memory<byte> key)
         {
-            if (_deletedRecords.IsDeleted(key.Span))
+            if (_deletedRecords.FindNode(key.Span).found)
             {
                 return (SearchResult.Deleted, default);
             }
 
-            if (!_bloomFilter.PossiblyContains(key.Span))
+            var (found, data) = _mainRecords.FindNode(key.Span);
+            if (found)
             {
-                return (SearchResult.NotFound, default);
+                return (SearchResult.Found, data);
             }
-            return _tree.FindNode(key.Span);
+            return (SearchResult.NotFound, default);
         }
 
         private (SearchResult result, Memory<byte> data) ReturnFoundData(int index)
@@ -60,47 +63,45 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
         private void LoadFile()
         {
-            _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open)!;
+            _memoryMappedFile = MemoryMappedFile.CreateFromFile(_fileName, System.IO.FileMode.Open);
             var fileInfo = new System.IO.FileInfo(_fileName);
             var fileSize = fileInfo.Length;
 
-            _mappedFile = new MappedFileMemory(0, (int)fileSize, _memoryMappedFile!);
+            _mappedFile = new MappedFileMemory(0, (int)fileSize, _memoryMappedFile);
 
-            var header = _mappedFile!.Memory.Span.Slice(0, StorageFile.MagicHeader.Length);
-            if (!header.SequenceEqual(StorageFile.MagicHeader))
+            var header = _mappedFile.Memory.Span.Slice(0, MagicHeader.Length);
+            if (!header.SequenceEqual(MagicHeader))
             {
                 throw new NotImplementedException("There was an error we need to cover for the file loading");
             }
 
-            var trailer = _mappedFile!.Memory.Span.Slice(_mappedFile!.Memory.Length - StorageFile.MagicTrailer.Length);
-            if (!trailer.SequenceEqual(StorageFile.MagicTrailer))
+            var trailer = _mappedFile.Memory.Span.Slice(_mappedFile.Memory.Length - MagicTrailer.Length);
+            if (!trailer.SequenceEqual(MagicTrailer))
             {
                 throw new NotImplementedException("There was an error loading the file we need to sort this out");
             }
 
-            _indexTable = _mappedFile!.Memory.Span.Slice(_mappedFile!.Length - Unsafe.SizeOf<IndexTable>() - StorageFile.MagicTrailer.Length).Read<IndexTable>();
-            _bloomFilter = new BloomFilter<FNV1Hash>(_mappedFile!.Memory.Slice(_indexTable.BloomFilterIndex, _indexTable.BloomFilterLength).Span, _database.Hasher);
-            _deletedRecords = new DeletedRecords<TComparer>(_indexTable, _mappedFile!.Memory, _database.Hasher, _database.Comparer);
-            _tree = new BinaryTree<TComparer>(_mappedFile!.Memory, _indexTable, _database.Comparer);
+            _indexTable = _mappedFile.Memory.Span.Slice(_mappedFile.Length - Unsafe.SizeOf<IndexTable>() - MagicTrailer.Length).Read<IndexTable>();
+            _mainRecords = new RecordSet(_indexTable.MainIndexes, _mappedFile.Memory, _database.Hasher, _database.Comparer);
+            _deletedRecords = new RecordSet(_indexTable.DeletedIndexes, _mappedFile.Memory, _database.Hasher, _database.Comparer);
         }
 
         internal SearchResult FindNode(Memory<byte> key)
         {
-            if (_deletedRecords.IsDeleted(key.Span))
+            if (_deletedRecords.FindNode(key.Span).found)
             {
                 return SearchResult.Deleted;
             }
 
-            if (!_bloomFilter.PossiblyContains(key.Span))
+            var (result, data) = _mainRecords.FindNode(key.Span);
+            if (result)
             {
-                return SearchResult.NotFound;
+                return SearchResult.Found;
             }
-
-            var (result, data) = _tree.FindNode(key.Span);
-            return result;
+            return SearchResult.NotFound;
         }
 
-        internal bool MayContainNode(Memory<byte> key) => _bloomFilter.PossiblyContains(key.Span);
+        internal bool MayContainNode(Memory<byte> key) => _mainRecords.PossiblyContains(key.Span);
 
         private int FindRow(Memory<byte> key, int blockStart, int blockEnd)
         {
@@ -128,7 +129,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
 
             return -1;
         }
-        
+
         public void Dispose() => _memoryMappedFile?.Dispose();
     }
 }

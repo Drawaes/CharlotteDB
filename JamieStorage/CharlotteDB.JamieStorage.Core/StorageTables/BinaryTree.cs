@@ -7,16 +7,16 @@ using CharlotteDB.Core.Keys;
 
 namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
-    internal class BinaryTree<TComparer> where TComparer : IKeyComparer
+    internal class BinaryTree
     {
         private int _headNode;
         private Memory<byte> _buffer;
-        private TComparer _comparer;
+        private IKeyComparer _comparer;
 
-        public BinaryTree(Memory<byte> mappedFile, IndexTable indexes, TComparer comparer)
+        public BinaryTree(Memory<byte> mappedFile, BTreeAndBloomFilter indexes, IKeyComparer comparer)
         {
             _comparer = comparer;
-            _buffer = mappedFile.Slice(0, indexes.BlockRegionLength + indexes.BlockRegionIndex);
+            _buffer = mappedFile.Slice(0, indexes.RegionLength + indexes.RegionIndex);
             _headNode = indexes.HeadNodeIndex;
         }
 

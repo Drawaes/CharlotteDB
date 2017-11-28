@@ -13,12 +13,14 @@ using Microsoft.Extensions.Logging;
 
 namespace CharlotteDB.JamieStorage.Core
 {
-    public class Database<TComparer> : IDisposable where TComparer : IKeyComparer
+    public class Database<TComparer, TInMemoryList> : IDisposable, IDatabase
+        where TComparer : IKeyComparer
+        where TInMemoryList : IInMemoryStore, new()
     {
         private string _folder;
-        private SkipList2<TComparer> _currentSkipList;
-        private SkipList2<TComparer>? _oldSkipList;
-        private List<StorageFile<TComparer>> _storageTables = new List<StorageFile<TComparer>>();
+        private IInMemoryStore _currentSkipList;
+        private IInMemoryStore _oldSkipList;
+        private List<StorageFile> _storageTables = new List<StorageFile>();
         private FNV1Hash _hasher;
         private DatabaseSettings _settings;
         private TComparer _comparer;
@@ -33,17 +35,18 @@ namespace CharlotteDB.JamieStorage.Core
         public Database(string folder, DatabaseSettings settings, TComparer comparer, Allocator allocator, ILoggerFactory loggerFactory)
         {
             _loggerFactory = loggerFactory;
-            _logger = _loggerFactory.CreateLogger<Database<TComparer>>();
+            _logger = _loggerFactory.CreateLogger<Database<TComparer, TInMemoryList>>();
             _hasher = new FNV1Hash();
             _allocator = allocator;
             _comparer = comparer;
             _folder = folder;
             _settings = settings;
-            _currentSkipList = new SkipList2<TComparer>(comparer, allocator);
+            _currentSkipList = new TInMemoryList();
+            _currentSkipList.Init(_allocator, _comparer);
         }
 
-        public TComparer Comparer => _comparer;
-        internal FNV1Hash Hasher => _hasher;
+        public IKeyComparer Comparer => _comparer;
+        public IHash Hasher => _hasher;
 
         public (bool found, Memory<byte> data) TryGetData(Memory<byte> key)
         {
@@ -138,7 +141,7 @@ namespace CharlotteDB.JamieStorage.Core
             return SearchResult.NotFound;
         }
 
-        internal bool MayContainNode(Memory<byte> key)
+        public bool MayContainNode(Memory<byte> key)
         {
             for (var i = _storageTables.Count - 1; i >= 0; i--)
             {
@@ -159,10 +162,11 @@ namespace CharlotteDB.JamieStorage.Core
                 _logger.LogInformation("Starting");
 
                 Interlocked.Exchange(ref _oldSkipList, _currentSkipList);
-                var currentList = new SkipList2<TComparer>(_comparer, _allocator);
+                var currentList = new TInMemoryList();
+                currentList.Init(_allocator, _comparer);
                 Interlocked.Exchange(ref _currentSkipList, currentList);
 
-                var storage = new StorageFile<TComparer>(NextFileTableName(), this);
+                var storage = new StorageFile(NextFileTableName(), this);
                 await storage.WriteInMemoryTableAsync(_oldSkipList ?? throw new ArgumentNullException(nameof(_oldSkipList)), 3);
 
                 // TODO : Make lockless threadsafe

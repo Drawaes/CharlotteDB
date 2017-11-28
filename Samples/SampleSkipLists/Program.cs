@@ -32,13 +32,13 @@ namespace SampleSkipLists
 
         private static async Task TestDB()
         {
-            
+
             var loggerFactory = new LoggerFactory();
             loggerFactory.AddConsole();
             var logger = loggerFactory.CreateLogger<Program>();
 
             var outputList = new List<(bool deleted, Memory<byte> bytes)>();
-            using (var database = Database.Create("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(50 * 1024), loggerFactory))
+            using (var database = Database.Create<ByteByByteComparer, InMemorySortedList>("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(50 * 1024), loggerFactory))
             {
                 var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
                 var rnd = new Random(7777);
@@ -48,7 +48,7 @@ namespace SampleSkipLists
                 {
                     var l = list[i];
                     var bytes = l.ToCharArray();
-                    var span = new Memory<byte>(bytes.AsSpan().NonPortableCast<char,byte>().ToArray());
+                    var span = new Memory<byte>(bytes.AsSpan().NonPortableCast<char, byte>().ToArray());
 
                     await database.PutAsync(span, span);
                     if (rnd.NextDouble() < 0.05)
@@ -112,7 +112,8 @@ namespace SampleSkipLists
 
             var comparer = new ByteByByteComparer();
             var allocator = new DummyAllocator(1024 * 1024);
-            var skipList = new SkipList2<ByteByByteComparer>(comparer, allocator);
+            var skipList = new SkipList2();
+            skipList.Init(allocator, comparer);
             var sortedDict = new SortedDictionary<string, string>();
             var list = System.IO.File.ReadAllLines("C:\\code\\output.txt");
 

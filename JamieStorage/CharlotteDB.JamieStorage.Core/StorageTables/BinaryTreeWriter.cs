@@ -11,30 +11,32 @@ using CharlotteDB.JamieStorage.InMemory;
 
 namespace CharlotteDB.JamieStorage.Core.StorageTables
 {
-    public class BinaryTreeWriter<TCompare> where TCompare : IKeyComparer
+    public class BinaryTreeWriter
     {
-        private SkipList2<TCompare> _inMemory;
+        private IInMemoryStore _inMemory;
         private Stream _file;
         private int _rootNode;
         private int _startOfData;
         private int _endOfData;
         private byte[] _tempData = new byte[Unsafe.SizeOf<TreeHeader>()];
-        private BloomFilter<FNV1Hash> _bloomFilter;
+        private BloomFilter _bloomFilter;
         private int _bitsToUseForBloomFilter;
         private int _count;
+        private ItemState _stateForMatch;
 
-        public BinaryTreeWriter(int bitsToUseForBloomFilter, Database<TCompare> database, int count, SkipList2<TCompare> inMemory)
+        public BinaryTreeWriter(int bitsToUseForBloomFilter, IDatabase database, int count, IInMemoryStore inMemory, ItemState stateForMatch)
         {
             _inMemory = inMemory;
+            _stateForMatch = stateForMatch;
             _count = count;
             _bitsToUseForBloomFilter = bitsToUseForBloomFilter;
-            _bloomFilter = new BloomFilter<FNV1Hash>(count, _bitsToUseForBloomFilter, 2, database.Hasher);
+            _bloomFilter = new BloomFilter(count, _bitsToUseForBloomFilter, 2, database.Hasher);
         }
 
         public int RootNode => _rootNode;
         public int StartOfData => _startOfData;
         public int EndOfData => _endOfData;
-        public BloomFilter<FNV1Hash> BloomFilter => _bloomFilter;
+        public BloomFilter BloomFilter => _bloomFilter;
 
         public async Task WriteTreeAsync(Stream file)
         {
@@ -57,7 +59,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             
             _inMemory.Next();
             var currentNode = _inMemory.CurrentNode;
-            while (currentNode.State != ItemState.Alive)
+            while (currentNode.State != _stateForMatch)
             {
                 if (!_inMemory.Next())
                 {
@@ -66,8 +68,7 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
                 currentNode = _inMemory.CurrentNode;
             }
             _bloomFilter.Add(currentNode.Key.Span);
-
-
+            
             var header = new TreeHeader()
             {
                 DataSize = currentNode.Data.Length,
@@ -81,7 +82,11 @@ namespace CharlotteDB.JamieStorage.Core.StorageTables
             _tempData.AsSpan().WriteAdvance(header);
             await _file.WriteAsync(_tempData);
             await _file.WriteAsync(currentNode.Key);
-            await _file.WriteAsync(currentNode.Data);
+            if (currentNode.Data.Length > 0)
+            {
+                await _file.WriteAsync(currentNode.Data);
+            }
+
             return index;
         }
     }
