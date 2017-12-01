@@ -23,22 +23,22 @@ namespace SampleSkipLists
             {
                 System.IO.File.Delete(f);
             }
-
-            var ignore = TestDB();
-            //TestSkipList();
+            var sw = Stopwatch.StartNew();
+            //var ignore = TestDB();
+            TestSkipList();
             Console.WriteLine("Waiting to complete");
             _event.WaitOne();
+            Console.WriteLine("Time taken " + sw.ElapsedMilliseconds);
         }
 
         private static async Task TestDB()
         {
-
             var loggerFactory = new LoggerFactory();
-            loggerFactory.AddConsole();
+            //loggerFactory.AddConsole();
             var logger = loggerFactory.CreateLogger<Program>();
 
             var outputList = new List<(bool deleted, Memory<byte> bytes)>();
-            using (var database = Database.Create<ByteByByteComparer, InMemorySortedList>("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(50 * 1024), loggerFactory))
+            using (var database = Database.Create<ByteByByteComparer, SkipList2>("c:\\code\\database", new ByteByByteComparer(), new DummyAllocator(50 * 1024), loggerFactory))
             {
                 var list = System.IO.File.ReadAllLines("C:\\code\\words.txt");
                 var rnd = new Random(7777);
@@ -109,16 +109,19 @@ namespace SampleSkipLists
 
         private static void TestSkipList()
         {
-
             var comparer = new ByteByByteComparer();
             var allocator = new DummyAllocator(1024 * 1024);
             var skipList = new SkipList2();
             skipList.Init(allocator, comparer);
-            var sortedDict = new SortedDictionary<string, string>();
+
+            var sortList = new InMemorySortedList();
+            sortList.Init(allocator, comparer);
+
             var list = System.IO.File.ReadAllLines("C:\\code\\output.txt");
 
             var sw = new Stopwatch();
             sw.Start();
+            var rnd = new Random(7777);
             for (var i = 0; i < list.Length; i++)
             {
                 var l = list[i];
@@ -126,36 +129,45 @@ namespace SampleSkipLists
                 var span = new Span<byte>(bytes);
 
                 skipList.Insert(span, span);
-                //sortedDict.Add(l, l);
+                sortList.Insert(span, span);
             }
-            Console.Write($"time = {sw.ElapsedMilliseconds}");
-
-            //var sb = new StringBuilder();
-            //while (skipList.Next())
-            //{
-            //    sb.AppendLine(Encoding.UTF8.GetString(skipList.CurrentNode.Key.ToArray()));
-            //}
-
-            //System.IO.File.WriteAllText("C:\\code\\output.txt", sb.ToString());
 
             for (var i = 0; i < list.Length; i++)
             {
-                var bytes = Encoding.UTF8.GetBytes(list[i]);
-                var result = skipList.TryFind(bytes, out var data);
-                if (result != CharlotteDB.Core.SearchResult.Found)
+                if (rnd.NextDouble() < 0.10)
                 {
-                    throw new InvalidOperationException();
-                }
-                if (data.Length != bytes.Length)
-                {
-                    throw new InvalidOperationException();
+                    var l = list[i];
+                    var bytes = Encoding.UTF8.GetBytes(l);
+                    var span = new Span<byte>(bytes);
+                    skipList.Remove(span);
+                    sortList.Remove(span);
                 }
             }
 
+            sortList.Reset();
+            skipList.Reset();
 
-            Console.Write($"time = {sw.ElapsedMilliseconds}");
-            var totalCount = skipList.Count;
+            while (sortList.Next())
+            {
+                skipList.Next();
 
+                var node1 = sortList.CurrentNode;
+                var node2 = skipList.CurrentNode;
+
+                if (node1.State != node2.State)
+                {
+                    throw new NotImplementedException();
+                }
+
+                if (!node1.Key.Span.SequenceEqual(node2.Key.Span))
+                {
+                    throw new NotImplementedException();
+                }
+                if (node1.State == ItemState.Alive && !node1.Data.Span.SequenceEqual(node2.Data.Span))
+                {
+                    throw new NotImplementedException();
+                }
+            }
         }
     }
 }

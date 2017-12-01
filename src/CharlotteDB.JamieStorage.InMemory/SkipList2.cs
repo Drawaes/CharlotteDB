@@ -3,7 +3,6 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using CharlotteDB.Core;
 using CharlotteDB.Core.Allocation;
 using CharlotteDB.Core.Keys;
